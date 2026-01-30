@@ -76,7 +76,7 @@ int store_seqs(const char *path, ref_seq **seqs) {
     return chrom_index;
 }
 
-int banded_align_and_report(const char *ref, uint64_t ref_span, const char *read, uint64_t read_span, uint64_t ref_pos, uint64_t ref_id, int ref_strand, int read_strand, uint64_t read_pos, int len) {
+int banded_align_and_report(const char *ref, uint64_t ref_span, int ref_strand, const char *read, uint64_t read_span, int read_strand, uint64_t ref_pos, uint64_t ref_id) {
     
     int ref_len = ref_span;
     int read_len = read_span;
@@ -93,8 +93,8 @@ int banded_align_and_report(const char *ref, uint64_t ref_span, const char *read
     if (read_strand) reverse_complement(read, read_buf, read_len);
     else memcpy(read_buf, read, read_len);
 
-    static int dp[MAX_LEN + 1][MAX_LEN + 1];
-    static int bt[MAX_LEN + 1][MAX_LEN + 1];
+    int dp[MAX_LEN + 1][MAX_LEN + 1];
+    int bt[MAX_LEN + 1][MAX_LEN + 1];
 
     // init
     for (int i = 0; i <= ref_len; i++)
@@ -187,6 +187,7 @@ int banded_align_and_report(const char *ref, uint64_t ref_span, const char *read
                 mismatches++;
                 if (i-1 != 0 && j-1 != 0 && i != ref_len && j != read_len) {
                     // printf("SNP\tREFID=%lu\tREADID=%lu\tPOS=%lu\tREF=%c\tALT=%c\n", ref_id, read_id, ref_pos + i - 1, ref_buf[i-1], read_buf[j-1]);
+                    // __set_variation_bits(ref_id, ref_pos + i - 1, 0);
                 }
             }
             i--; j--;
@@ -200,6 +201,7 @@ int banded_align_and_report(const char *ref, uint64_t ref_span, const char *read
 #endif
             if (i-1 != 0 && j-1 != 0 && i != ref_len && j != read_len) {
                 // printf("DEL\tREFID=%lu\tREADID=%lu\tPOS=%lu\tREF=%c\tALT=%c\n", ref_id, read_id, ref_pos + i - 1, ref_buf[i-1], '-');
+                // __set_variation_bits(ref_id, ref_pos + i - 1, 0);
             }
             i--;
         }
@@ -212,6 +214,7 @@ int banded_align_and_report(const char *ref, uint64_t ref_span, const char *read
 #endif
             if (i-1 != 0 && j-1 != 0 && i != ref_len && j != read_len) {
                 // printf("INS\tREFID=%lu\tREADID=%lu\tPOS=%lu\tREF=%c\tALT=%c\n", ref_id, read_id, ref_pos + i - 1, '-', read_buf[j-1]);
+                // __set_variation_bits(ref_id, ref_pos + i - 1, 0);
             }
             j--;
         }

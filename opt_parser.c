@@ -19,16 +19,16 @@ void print_usage(const char *prog) {
         "  -t, --threads             thread number [%d]\n"
         "  -p, --progress            display progress\n"
         "  -h, --help                show this help\n",
-        prog, BLEND_K_SHORT, BLEND_W_SHORT, BLEND_BITS_SHORT, BLEND_NEIGHBOR_NUMBER_SHORT, THREAD_NUMBER
+        prog, __DEFAULT_BLEND_K__, __DEFAULT_BLEND_w__, __DEFAULT_BLEND_BITS__, __DEFAULT_BLEND_NEIGHBOR_NUMBER__, __DEFAULT_THREAD_NUMBER__
     );
 }
 
 void init_params(params *p) {
-    p->k = BLEND_K_SHORT;
-    p->w = BLEND_W_SHORT;
-    p->blend_bits = BLEND_BITS_SHORT;
-    p->n_neighbors = BLEND_NEIGHBOR_NUMBER_SHORT;
-    p->progress = PROGRESS;
+    p->k = __DEFAULT_BLEND_K__;
+    p->w = __DEFAULT_BLEND_w__;
+    p->blend_bits = __DEFAULT_BLEND_BITS__;
+    p->n_neighbors = __DEFAULT_BLEND_NEIGHBOR_NUMBER__;
+    p->progress = __DEFAULT_PROGRESS__;
 }
 
 void parse_args(int argc, char **argv, params *p) {

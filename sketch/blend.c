@@ -258,6 +258,8 @@ uint64_t blend_sb_sketch(const char *str, int str_len, int window_size, int kmer
     free(forward_blend_buffer);
     free(reverse_blend_buffer);
 
+    if (seed_count == 0) free(temp_fuzzy_seeds);
+
     return seed_count;
 }
 

@@ -3,6 +3,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include "struct_def.h"
 
 
@@ -30,8 +31,7 @@ void free_seqs(ref_seq **seqs, int seq_len);
 
 int store_seqs(const char *path, ref_seq **seqs);
 
-int banded_align_and_report(const char *ref, uint64_t ref_span, const char *read, uint64_t read_span, uint64_t ref_pos, uint64_t ref_id, int ref_strand, int read_strand, uint64_t read_pos, int len);
-
+int banded_align_and_report(const char *ref, uint64_t ref_span, int ref_strand, const char *read, uint64_t read_span, int read_strand, uint64_t ref_pos, uint64_t ref_id);
 // -------------------------------------------
 // --- THREADING HELPER FUNCS
 // -------------------------------------------

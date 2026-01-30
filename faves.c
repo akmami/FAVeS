@@ -17,7 +17,7 @@ uint64_t process_fasta(params *p, uint128_t **fuzzy_seeds, uint64_t *fuzzy_seeds
 
     uint128_t *all_fuzzy_seeds;
     uint64_t all_fuzzy_seeds_len = 0;
-    uint64_t all_fuzzy_seeds_cap = SKETCH_CAPACITY;
+    uint64_t all_fuzzy_seeds_cap = __DEFAULT_SKETCH_CAPACITY__;
 
     all_fuzzy_seeds = (uint128_t *)malloc(sizeof(uint128_t) * all_fuzzy_seeds_cap);
     if (!all_fuzzy_seeds) {
@@ -160,7 +160,7 @@ uint64_t process_fasta(params *p, uint128_t **fuzzy_seeds, uint64_t *fuzzy_seeds
 
     *fuzzy_seeds_len = relaxed_fuzzy_seeds_len;
 
-    printf("[INFO] Processed reference (unique %lu (%.2f), relaxed %lu (%.2f), total %lu)\n", unique_fuzzy_seeds_len, (double)unique_fuzzy_seeds_len / (double)all_fuzzy_seeds_len, relaxed_fuzzy_seeds_len, (double)relaxed_fuzzy_seeds_len / (double)all_fuzzy_seeds_len, all_fuzzy_seeds_len);
+    printf("[INFO] Processed reference (unique %lu - %.2f%c, relaxed %lu - %.2f%c, total - %lu)\n", unique_fuzzy_seeds_len, (double)unique_fuzzy_seeds_len / (double)all_fuzzy_seeds_len, '%', relaxed_fuzzy_seeds_len, (double)relaxed_fuzzy_seeds_len / (double)all_fuzzy_seeds_len, '%', all_fuzzy_seeds_len);
 
     return unique_fuzzy_seeds_len;
 }
@@ -175,11 +175,9 @@ void process_records(params *p, map32_t *index_table, uint128_t *fuzzy_seeds, ui
 
     kseq_t *seq = kseq_init(fp);
 
-    time_t last_print = 0;
-
     // init threads
     job_queue_t queue;
-    queue_init(&queue, QUEUE_SIZE);
+    queue_init(&queue, __DEFAULT_QUEUE_SIZE__);
 
     pthread_t threads[p->n_threads];
     worker_ctx_t ctx[p->n_threads];
@@ -201,8 +199,12 @@ void process_records(params *p, map32_t *index_table, uint128_t *fuzzy_seeds, ui
 
     uint64_t read_count = 0;
 
+    batch_records_t *b = batch_records_create(__DEFAULT_BATCH_SIZE__);
 
-    batch_records_t *b = batch_records_create(BATCH_SIZE);
+    time_t program_start = 0, program_end, last_print = 0;
+    double total_exec_sec = 0;
+
+    program_start = time(NULL);
 
     while (kseq_read(seq) >= 0) {
 
@@ -212,14 +214,18 @@ void process_records(params *p, map32_t *index_table, uint128_t *fuzzy_seeds, ui
 
         read_count++;
 
-        if (b->len == BATCH_SIZE) {
+        if (b->len == __DEFAULT_BATCH_SIZE__) {
+            time_t queue_start = time(NULL);
+            
             queue_push(&queue, b);
-            b = batch_records_create(BATCH_SIZE);
+            b = batch_records_create(__DEFAULT_BATCH_SIZE__);
+
+            total_exec_sec += time(NULL) - queue_start;
         }
 
         if (p->progress) {
             time_t now = time(NULL);
-            if (now - last_print >= 1) {   // every 1 second
+            if (now - last_print >= __DEFAULT_PROGRESS_INTERVAL__) {   // every 1 second
                 printf("\r[INFO] Processed %ld records...", read_count);
                 fflush(stdout);
                 last_print = now;
@@ -250,20 +256,25 @@ void process_records(params *p, map32_t *index_table, uint128_t *fuzzy_seeds, ui
     pthread_cond_destroy(&queue.not_empty);
     pthread_cond_destroy(&queue.not_full);
 
-    stats_t stats = (stats_t){0ULL, 0ULL, 0ULL, 0ULL};
-    for (int i = 0; i < p->n_threads; i++) {
-        stats.found += ctx[i].p->stats.found;
-        stats.not_found += ctx[i].p->stats.not_found;
-        stats.mismatches += ctx[i].p->stats.mismatches;
-        stats.total_len += ctx[i].p->stats.total_len;
-        free(ctx[i].p);
-    }
+    program_end = time(NULL);
 
     if (p->progress) {
         printf("\n");
     }
 
-    printf("[INFO] Found: %lu, not found: %lu, mismatches: %lu, total: %lu\n", stats.found, stats.not_found, stats.mismatches, stats.total_len);
+    printf("[INFO] Elapsed time: %02d:%02d:%02d / %02d:%02d:%02d (%.2f%c) seconds\n", (int)(total_exec_sec/3600), (int)(total_exec_sec / 60) % 3600, ((int)total_exec_sec % 60), (int)((program_end - program_start) / 3600), (int)((program_end - program_start) / 60) % 3600, ((int)(program_end - program_start) % 60), total_exec_sec / (program_end - program_start), '%');
+
+    stats_t stats = (stats_t){0ULL, 0ULL, 0ULL, 0ULL, 0ULL};
+    for (int i = 0; i < p->n_threads; i++) {
+        stats.countains_unique += ctx[i].p->stats.countains_unique;
+        stats.only_non_unique += ctx[i].p->stats.only_non_unique;
+        stats.no_seed += ctx[i].p->stats.no_seed;
+        stats.total_seed_count += ctx[i].p->stats.total_seed_count;
+        stats.mismatch_count += ctx[i].p->stats.mismatch_count;
+        free(ctx[i].p);
+    }
+
+    printf("[INFO] countains_unique: %lu, only_non_unique: %lu, no_seed: %lu, total_seed_count: %lu, mismatch_count: %lu\n", stats.countains_unique, stats.only_non_unique, stats.no_seed, stats.total_seed_count, stats.mismatch_count);
 
     // TODO: sort reported variatns and take consensus and finalize report
 }
@@ -284,12 +295,7 @@ void *worker_process_record(void *arg) {
     uint64_t relaxed_fuzzy_seeds_len = ctx->p->relaxed_fuzzy_seeds_len;
     map32_t *index_table = (map32_t *)ctx->p->index_table;
 
-    ctx->p->stats = (stats_t){0ULL, 0ULL, 0ULL, 0ULL};
-    ctx->p->stats.not_found = 0;
-    ctx->p->stats.mismatches = 0;
-    ctx->p->stats.total_len = 0;
-
-    uint64_t found = 0, not_found = 0, mismatches = 0, total_len = 0;
+    uint64_t countains_unique = 0, only_non_unique = 0, no_seed = 0, total_seed_count = 0, mismatch_count = 0;
 
     while (1) {
         batch_records_t *records = queue_pop(ctx->queue);
@@ -304,13 +310,14 @@ void *worker_process_record(void *arg) {
             uint64_t temp_fuzzy_seeds_len = 0;
             temp_fuzzy_seeds_len = blend_sketch(bases, len, w, k, blend_bits, n_neighbors, 0, &temp_fuzzy_seeds);
             
+            int found_unique = 0;
             // store in set
             for (uint64_t i = 0; i < temp_fuzzy_seeds_len; i++) {
                 khint_t k = map32_get(index_table, __blend_get_kmer(temp_fuzzy_seeds[i]));
 
                 if (k < kh_end(index_table)) {
 
-                    found++;
+                    found_unique++;
 
                     uint32_t seed_index = kh_val(index_table, k);
 
@@ -330,8 +337,8 @@ void *worker_process_record(void *arg) {
                         const char *read = bases + read_index;
 
                         // align and report variants in alignment
-                        int alignment_mismatches = banded_align_and_report(ref, ref_span, read, read_span, ref_index, ref_id, ref_strand, read_strand, read_index, len);
-                        mismatches += alignment_mismatches;
+                        int alignment_mismatches = banded_align_and_report(ref, ref_span, ref_strand, read, read_span, read_strand, ref_index, ref_id);
+                        mismatch_count += alignment_mismatches;
 
                         continue;
                     }
@@ -350,7 +357,7 @@ void *worker_process_record(void *arg) {
                                         break;
                                     }
                                     if (__blend_get_reference_id(fuzzy_seeds[temp_seed_index]) == __blend_get_reference_id(fuzzy_seeds[left_seed_index]) &&
-                                        abs_diff(__blend_get_index(fuzzy_seeds[temp_seed_index]), __blend_get_index(fuzzy_seeds[left_seed_index])) < DISTANCE_THRESHOLD) {
+                                        abs_diff(__blend_get_index(fuzzy_seeds[temp_seed_index]), __blend_get_index(fuzzy_seeds[left_seed_index])) < __DEFAULT_DISTANCE_THRESHOLD__) {
                                         // found
                                         uint64_t ref_span = __blend_get_length(fuzzy_seeds[temp_seed_index]);
                                         uint64_t ref_index = __blend_get_index(fuzzy_seeds[temp_seed_index]);
@@ -366,8 +373,8 @@ void *worker_process_record(void *arg) {
                                         const char *read = bases + read_index;
 
                                         // align and report variants in alignment
-                                        int alignment_mismatches = banded_align_and_report(ref, ref_span, read, read_span, ref_index, ref_id, ref_strand, read_strand, read_index, len);
-                                        mismatches += alignment_mismatches;
+                                        int alignment_mismatches = banded_align_and_report(ref, ref_span, ref_strand, read, read_span, read_strand, ref_index, ref_id);
+                                        mismatch_count += alignment_mismatches;
                                     }
                                 }
                             }
@@ -386,7 +393,7 @@ void *worker_process_record(void *arg) {
                                         break;
                                     }
                                     if (__blend_get_reference_id(fuzzy_seeds[temp_seed_index]) == __blend_get_reference_id(fuzzy_seeds[right_seed_index]) &&
-                                        abs_diff(__blend_get_index(fuzzy_seeds[temp_seed_index]), __blend_get_index(fuzzy_seeds[right_seed_index])) < DISTANCE_THRESHOLD) {
+                                        abs_diff(__blend_get_index(fuzzy_seeds[temp_seed_index]), __blend_get_index(fuzzy_seeds[right_seed_index])) < __DEFAULT_DISTANCE_THRESHOLD__) {
                                         // found
                                         uint64_t ref_span = __blend_get_length(fuzzy_seeds[temp_seed_index]);
                                         uint64_t ref_index = __blend_get_index(fuzzy_seeds[temp_seed_index]);
@@ -402,30 +409,37 @@ void *worker_process_record(void *arg) {
                                         const char *read = bases + read_index;
 
                                         // align and report variants in alignment
-                                        int alignment_mismatches = banded_align_and_report(ref, ref_span, read, read_span, ref_index, ref_id, ref_strand, read_strand, read_index, len);
-                                        mismatches += alignment_mismatches;
+                                        int alignment_mismatches = banded_align_and_report(ref, ref_span, ref_strand, read, read_span, read_strand, ref_index, ref_id);
+                                        mismatch_count += alignment_mismatches;
                                     }
                                 }
                             }
                         }
                     }
-                } else {
-                    not_found++;
                 }
             }
 
             if (temp_fuzzy_seeds_len) free(temp_fuzzy_seeds);
 
-            total_len += temp_fuzzy_seeds_len;
+            total_seed_count += temp_fuzzy_seeds_len;
+
+            if (found_unique) {
+                countains_unique++;
+            } else if (temp_fuzzy_seeds_len) {
+                only_non_unique++;
+            } else {
+                no_seed++;
+            }
         }
 
         // cleanup
         batch_records_destroy(records);
     }
 
-    ctx->p->stats.found = found;
-    ctx->p->stats.not_found = not_found;
-    ctx->p->stats.mismatches = mismatches;
-    ctx->p->stats.total_len = total_len;
+    ctx->p->stats.countains_unique = countains_unique;
+    ctx->p->stats.only_non_unique = only_non_unique;
+    ctx->p->stats.no_seed = no_seed;
+    ctx->p->stats.mismatch_count = mismatch_count;
+    ctx->p->stats.total_seed_count = total_seed_count;
     return NULL;
 }

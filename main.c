@@ -1,5 +1,4 @@
 #include <stdlib.h>
-#include <time.h>
 #include "struct_def.h"
 #include "opt_parser.h"
 #include "utils.h"

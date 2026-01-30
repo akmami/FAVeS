@@ -5,33 +5,28 @@
 #include <stdint.h>
 #include "pthread.h"
 
-#define BLEND_K_SHORT 21
-#define BLEND_W_SHORT 11
-#define BLEND_BITS_SHORT 32
-#define BLEND_NEIGHBOR_NUMBER_SHORT 5
-#define BLEND_K_HIFI 19
-#define BLEND_W_HIFI 50
-#define BLEND_BITS_HIFI 38
-#define BLEND_NEIGHBOR_NUMBER_HIFI 5
-#define THREAD_NUMBER 4
-#define SKETCH_CAPACITY 40000000
-#define DISTANCE_THRESHOLD 200
-#define QUEUE_SIZE 128
-#define BATCH_SIZE 1024
+#define __DEFAULT_BLEND_K__ 21
+#define __DEFAULT_BLEND_w__ 11
+#define __DEFAULT_BLEND_BITS__ 32
+#define __DEFAULT_BLEND_NEIGHBOR_NUMBER__ 5
+#define __DEFAULT_THREAD_NUMBER__ 4
+#define __DEFAULT_SKETCH_CAPACITY__ 40000000
+#define __DEFAULT_DISTANCE_THRESHOLD__ 200
+#define __DEFAULT_QUEUE_SIZE__ 1024
+#define __DEFAULT_BATCH_SIZE__ 256
+#define __DEFAULT_PROGRESS_INTERVAL__ 1
 
-#define READ_COUNT_BREAKPOINT
+#define __DEFAULT_PROGRESS__ 0
 
-#define PROGRESS 0
+#define MATCH       2
+#define MISMATCH    -5
+#define GAP         -3
+#define BAND        20     // +-10 bp band
+#define MAX_LEN     256   // max extension length
+#define NEG_INF     -100000000
+#define MIN_SCORE   64
 
-#define MATCH     2
-#define MISMATCH -5
-#define GAP      -3
-#define BAND 20        // ±8 bp band
-#define MAX_LEN 2048   // max extension length
-#define NEG_INF -100000000
-#define MIN_SCORE 64
-
-#define abs_diff(x, y) (x < y ? y - x : x - y)
+#define abs_diff(x, y) ((x) < (y) ? (y) - (x) : (x) - (y))
 
 
 typedef struct {
@@ -52,10 +47,11 @@ typedef struct {
 } params;
 
 typedef struct {
-    uint64_t found;
-    uint64_t not_found;
-    uint64_t mismatches;
-    uint64_t total_len;
+    uint64_t countains_unique;  // read-wise
+    uint64_t only_non_unique;   // read-wise
+    uint64_t no_seed;           // read-wise
+    uint64_t total_seed_count;  // overall
+    uint64_t mismatch_count;    // overall
 } stats_t;
 
 typedef struct {
@@ -96,5 +92,22 @@ typedef struct {
     job_queue_t *queue;
     params_lite *p;
 } worker_ctx_t;
+
+
+static const uint64_t variation_index = ((1ULL << 52) - 1) << 2;
+
+#define __get_variation_chrom(x) ((x) >> 54)
+#define __get_variation_index(x) (((x) & variation_index) >> 2) 
+#define __get_variation_type(x) ((x) & 3)
+
+#define __set_variation_chrom(x, idx) ((x) |= ((uint64_t)(idx) << 54))
+#define __set_variation_index(x, idx) ((x) |= ((uint64_t)(idx) << 2)) 
+#define __set_variation_type(x, type) ((x) |= ((type) & 3))
+#define __set_variation_bits(chrom, index, type) (((chrom) << 54) | ((index) << 2) | ((type) & 3))
+#define __set_variation(x, chrom, index, type) ((x) = __set_variation_bits(chrom, index, type))
+
+typedef struct {
+    uint64_t x; // crom (10 bits) + index (52 bits) + type (2 bits)
+} variation;
 
 #endif

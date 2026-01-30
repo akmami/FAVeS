@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <time.h>
 #include <zlib.h>
 #include "utils/khashl.h"
 #include "utils/kseq.h"
