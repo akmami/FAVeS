@@ -16,9 +16,10 @@ void print_usage(const char *prog) {
         "  -w, --window <int>        window size [%d]\n"
         "  -b, --blend-bits <int>    number of bits for hash [%d]\n"
         "  -n, --n-neighbors <int>   number of neighbour [%d]\n"
-        "  -p, --progress            Display progress\n"
-        "  -h, --help                Show this help\n",
-        prog, BLEND_K_SHORT, BLEND_W_SHORT, BLEND_BITS_SHORT, BLEND_NEIGHBOR_NUMBER_SHORT
+        "  -t, --threads             thread number [%d]\n"
+        "  -p, --progress            display progress\n"
+        "  -h, --help                show this help\n",
+        prog, BLEND_K_SHORT, BLEND_W_SHORT, BLEND_BITS_SHORT, BLEND_NEIGHBOR_NUMBER_SHORT, THREAD_NUMBER
     );
 }
 
@@ -38,6 +39,7 @@ void parse_args(int argc, char **argv, params *p) {
         {"window",      required_argument, 0, 'w'},
         {"blend-bits",  required_argument, 0, 'b'},
         {"n-neighbors", required_argument, 0, 'n'},
+        {"threads",     required_argument, 0, 't'},
         {"progress",    no_argument,       0, 'p'},
         {"help",        no_argument,       0, 'h' },
         {0, 0, 0, 0}
@@ -68,6 +70,9 @@ void parse_args(int argc, char **argv, params *p) {
             break;
         case 'n':
             p->n_neighbors = atoi(optarg);
+            break;
+        case 't':
+            p->n_threads = atoi(optarg);
             break;
         case 'p':
             p->progress = 1;
@@ -107,5 +112,10 @@ void parse_args(int argc, char **argv, params *p) {
     if (!file_exists(p->fastq)) {
         fprintf(stderr, "Error: fastq file does not exists\n");
         exit(1);
+    }
+
+    if (p->n_threads <= 0 || 1024 < p->n_threads) {
+        fprintf(stderr, "Error: invalid thread count\n");
+        exit(1);  
     }
 }

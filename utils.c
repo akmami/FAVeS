@@ -1,31 +1,6 @@
 #include "utils.h"
 
 
-int cmp_fuzzy_seeds(const void *a, const void *b) {
-    const uint128_t *x = (uint128_t *)a;
-    const uint128_t *y = (uint128_t *)b;
-    return (x->x >> 14) > (y->x >> 14) ? 1 : -1;
-}
-
-static inline char rc_base(char b) {
-    switch (b) {
-        case 'A': return 'T';
-        case 'C': return 'G';
-        case 'G': return 'C';
-        case 'T': return 'A';
-        case 'a': return 'T';
-        case 'c': return 'G';
-        case 'g': return 'C';
-        case 't': return 'A';
-        default:  return 'N';
-    }
-}
-
-void reverse_complement(const char *in, char *out, int len) {
-    for (int i = 0; i < len; i++)
-        out[len - i - 1] = rc_base(in[i]);
-}
-
 void free_seqs(ref_seq **seqs, int seq_len) {
     if (seq_len) {
         ref_seq *temp = *seqs;
@@ -39,6 +14,7 @@ void free_seqs(ref_seq **seqs, int seq_len) {
         free(temp);
     }
 }
+
 int store_seqs(const char *path, ref_seq **seqs) {
 
     char *fai_path = (char *)malloc(strlen(path) + 5);
@@ -100,162 +76,7 @@ int store_seqs(const char *path, ref_seq **seqs) {
     return chrom_index;
 }
 
-uint64_t process_fasta(params *p, uint128_t **fuzzy_seeds, uint64_t *fuzzy_seeds_len, map32_t **index_table, ref_seq **seqs, int *chrom_count) {
-
-    *chrom_count = store_seqs(p->fasta, seqs);
-    *fuzzy_seeds_len = 0;
-
-    uint128_t *all_fuzzy_seeds;
-    uint64_t all_fuzzy_seeds_len = 0;
-    uint64_t all_fuzzy_seeds_cap = SKETCH_CAPACITY;
-
-    all_fuzzy_seeds = (uint128_t *)malloc(sizeof(uint128_t) * all_fuzzy_seeds_cap);
-    if (!all_fuzzy_seeds) {
-        fprintf(stderr, "[ERROR] couldn't allocate array\n");
-        exit(1);
-    }
-
-    gzFile fp = gzopen(p->fasta, "r");
-    if (!fp) {
-        fprintf(stderr, "[ERROR] cannot open reference %s\n", p->fasta);
-        exit(1);
-    }
-
-    kseq_t *seq = kseq_init(fp);
-
-    int chrom_index = 0;
-
-    while (kseq_read(seq) >= 0) {
-        const char *bases = seq->seq.s;
-        int len = seq->seq.l;
-
-        (*seqs[chrom_index]).chrom = (char *)malloc(len);
-        memcpy((*seqs[chrom_index]).chrom, bases, len);
-
-        uint128_t *chr_fuzzy_seeds;
-        uint64_t chr_fuzzy_seeds_len = 0;
-        chr_fuzzy_seeds_len = blend_sketch(bases, len, p->w, p->k, p->blend_bits, p->n_neighbors, chrom_index, &chr_fuzzy_seeds);
-
-        if (chr_fuzzy_seeds_len) {
-            if (all_fuzzy_seeds_cap <= all_fuzzy_seeds_len + chr_fuzzy_seeds_len) {
-                while (all_fuzzy_seeds_cap <= all_fuzzy_seeds_len + chr_fuzzy_seeds_len) {
-                    all_fuzzy_seeds_cap *= 2;
-                }
-                uint128_t *temp = (uint128_t *)realloc(all_fuzzy_seeds, sizeof(uint128_t) * all_fuzzy_seeds_cap);
-                if (!temp) {
-                    fprintf(stderr, "[ERROR] couldn't reallocate array\n");
-                    exit(1);
-                }
-                all_fuzzy_seeds = temp;
-            }
-            
-            memcpy(all_fuzzy_seeds + all_fuzzy_seeds_len, chr_fuzzy_seeds, sizeof(uint128_t) * chr_fuzzy_seeds_len);
-            all_fuzzy_seeds_len += chr_fuzzy_seeds_len;
-
-            free(chr_fuzzy_seeds);
-        }
-
-        chrom_index++;
-    }
-    // clean-up fasta reading 
-    kseq_destroy(seq);
-    gzclose(fp);
-
-    // if no seeds are found, then no need to proceed
-    if (!all_fuzzy_seeds_len) {
-        free(all_fuzzy_seeds);
-        return 0;
-    }
-
-    uint128_t *temp_all_fuzzy_seeds = (uint128_t *)malloc(sizeof(uint128_t) * all_fuzzy_seeds_len);
-    if (!temp_all_fuzzy_seeds) {
-        fprintf(stderr, "[ERROR] couldn't allocate array\n");
-    }
-    memcpy(temp_all_fuzzy_seeds, all_fuzzy_seeds, sizeof(uint128_t) * all_fuzzy_seeds_len);
-
-    // get unique fuzzy_seeds
-    qsort(all_fuzzy_seeds, all_fuzzy_seeds_len, sizeof(uint128_t), cmp_fuzzy_seeds);
-    
-    uint64_t unique_fuzzy_seeds_len = 0;
-
-    for (uint64_t i = 0; i < all_fuzzy_seeds_len; ) {
-        uint64_t j = i + 1;
-
-        while (j < all_fuzzy_seeds_len && BLEND_GET_KMER(all_fuzzy_seeds[j]) == BLEND_GET_KMER(all_fuzzy_seeds[i])) {
-            j++;
-        }
-
-        if (j == i + 1) {
-            all_fuzzy_seeds[unique_fuzzy_seeds_len++] = all_fuzzy_seeds[i];
-        }
-
-        i = j;
-    }
-    
-    map32_t *temp_index_table = *index_table;
-    for (uint64_t i = 0; i < unique_fuzzy_seeds_len; i++) {
-        khint_t k; int absent;
-        k = map32_put(temp_index_table, BLEND_GET_KMER(all_fuzzy_seeds[i]), &absent);
-        kh_val(temp_index_table, k) = i;
-    }
-
-    if (all_fuzzy_seeds) {
-        *fuzzy_seeds = all_fuzzy_seeds;
-    }
-
-    uint64_t relaxed_fuzzy_seeds_len = unique_fuzzy_seeds_len;
-
-    // todo: handle i=0 and i=all_fuzzy_seeds_len-1
-    for (uint64_t i = 1; i < all_fuzzy_seeds_len - 1; i++) {
-        khint_t k = map32_get(temp_index_table, BLEND_GET_KMER(temp_all_fuzzy_seeds[i]));
-        
-        if (k < kh_end(temp_index_table)) { // if unique
-            continue;
-        }
-
-        k = map32_get(temp_index_table, BLEND_GET_KMER(temp_all_fuzzy_seeds[i-1]));
-
-        if (k < kh_end(temp_index_table)) { // if left is unique
-            all_fuzzy_seeds[relaxed_fuzzy_seeds_len++] = temp_all_fuzzy_seeds[i];
-            continue;
-        }
-
-        k = map32_get(temp_index_table, BLEND_GET_KMER(temp_all_fuzzy_seeds[i+1]));
-
-        if (k < kh_end(temp_index_table)) { // if right is unique
-            all_fuzzy_seeds[relaxed_fuzzy_seeds_len++] = temp_all_fuzzy_seeds[i];
-        }
-    }
-
-    // no need for temp_all_fuzzy_seeds any more
-    free(temp_all_fuzzy_seeds);
-
-    if (relaxed_fuzzy_seeds_len != unique_fuzzy_seeds_len) {
-        qsort(all_fuzzy_seeds + unique_fuzzy_seeds_len, relaxed_fuzzy_seeds_len - unique_fuzzy_seeds_len, sizeof(uint128_t), cmp_fuzzy_seeds);
-    }
-
-    for (uint64_t i = unique_fuzzy_seeds_len; i < relaxed_fuzzy_seeds_len; ) {
-        uint64_t j = i + 1;
-
-        while (j < relaxed_fuzzy_seeds_len && BLEND_GET_KMER(all_fuzzy_seeds[j]) == BLEND_GET_KMER(all_fuzzy_seeds[i])) {
-            j++;
-        }
-
-        khint_t k; int absent;
-        k = map32_put(temp_index_table, BLEND_GET_KMER(all_fuzzy_seeds[i]), &absent);
-        kh_val(temp_index_table, k) = i;
-
-        i = j;
-    }
-
-    *fuzzy_seeds_len = relaxed_fuzzy_seeds_len;
-
-    printf("[INFO] Unique %lu / %lu (%.2f), Relaxted %lu (%.2f)\n", unique_fuzzy_seeds_len, all_fuzzy_seeds_len, (double)unique_fuzzy_seeds_len / (double)all_fuzzy_seeds_len, relaxed_fuzzy_seeds_len, (double)relaxed_fuzzy_seeds_len / (double)all_fuzzy_seeds_len);
-
-    return unique_fuzzy_seeds_len;
-}
-
-int banded_align_and_report(const char *ref, uint64_t ref_span, const char *read, uint64_t read_span, uint64_t ref_pos, uint64_t ref_id, uint64_t read_id, int ref_strand, int read_strand, uint64_t read_pos, int len) {
+int banded_align_and_report(const char *ref, uint64_t ref_span, const char *read, uint64_t read_span, uint64_t ref_pos, uint64_t ref_id, int ref_strand, int read_strand, uint64_t read_pos, int len) {
     
     int ref_len = ref_span;
     int read_len = read_span;
@@ -442,4 +263,50 @@ int banded_align_and_report(const char *ref, uint64_t ref_span, const char *read
     }
 #endif
     return mismatches;
+}
+
+void queue_init(job_queue_t *q, int capacity) {
+    q->buf = malloc(sizeof(batch_records_t *) * capacity);
+    q->capacity = capacity;
+    q->head = q->tail = q->count = 0;
+    q->done = 0;
+
+    pthread_mutex_init(&q->lock, NULL);
+    pthread_cond_init(&q->not_empty, NULL);
+    pthread_cond_init(&q->not_full, NULL);
+}
+
+void queue_push(job_queue_t *q, batch_records_t *records) {
+    pthread_mutex_lock(&q->lock);
+
+    while (q->count == q->capacity)
+        pthread_cond_wait(&q->not_full, &q->lock);
+
+    q->buf[q->tail] = records;
+    q->tail = (q->tail + 1) % q->capacity;
+    q->count++;
+
+    pthread_cond_signal(&q->not_empty);
+    pthread_mutex_unlock(&q->lock);
+}
+
+batch_records_t *queue_pop(job_queue_t *q) {
+    pthread_mutex_lock(&q->lock);
+
+    while (q->count == 0 && !q->done)
+        pthread_cond_wait(&q->not_empty, &q->lock);
+
+    if (q->count == 0 && q->done) {
+        pthread_mutex_unlock(&q->lock);
+        return NULL;
+    }
+
+    batch_records_t *records = q->buf[q->head];
+    q->head = (q->head + 1) % q->capacity;
+    q->count--;
+
+    pthread_cond_signal(&q->not_full);
+    pthread_mutex_unlock(&q->lock);
+
+    return records;
 }

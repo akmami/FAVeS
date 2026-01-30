@@ -15,7 +15,7 @@ LDFLAGS := -lm -pthread -lz
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(CXXLIBS) $(LDFLAGS) -L lib -lblend 
+	$(CC) $(CFLAGS) -o $@ $^ $(CXXLIBS) $(LDFLAGS) -L lib -lblend -pthread
 	rm -f $(OBJS)
 
 %.o: %.c
@@ -32,7 +32,7 @@ clean:
 
 blend: 
 	@mkdir -p lib
-	gcc -O3 -mavx2 -msse4.1 -c sketch/blend.c -I blend
+	$(CC) $(CFLAGS) -c sketch/blend.c -I blend
 	ar rcs lib/libblend.a blend.o
 	@rm -f blend.o
 
