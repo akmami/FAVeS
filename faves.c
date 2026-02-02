@@ -4,13 +4,19 @@
 KSEQ_INIT(gzFile, gzread)
 
 
+static inline int cmp_variations(const void *a, const void *b) {
+    const uint64_t *x = (uint64_t *)a;
+    const uint64_t *y = (uint64_t *)b;
+    return x > y ? 1 : -1;
+}
+
 static inline int cmp_fuzzy_seeds(const void *a, const void *b) {
     const uint128_t *x = (uint128_t *)a;
     const uint128_t *y = (uint128_t *)b;
     return (x->x >> 14) > (y->x >> 14) ? 1 : -1;
 }
 
-uint64_t process_fasta(params *p, uint128_t **fuzzy_seeds, uint64_t *fuzzy_seeds_len, map32_t **index_table, ref_seq **seqs, int *chrom_count) {
+uint64_t process_fasta(params_t *p, uint128_t **fuzzy_seeds, uint64_t *fuzzy_seeds_len, map32_t **index_table, ref_seq_t **seqs, int *chrom_count) {
 
     *chrom_count = store_seqs(p->fasta, seqs);
     *fuzzy_seeds_len = 0;
@@ -27,7 +33,7 @@ uint64_t process_fasta(params *p, uint128_t **fuzzy_seeds, uint64_t *fuzzy_seeds
 
     gzFile fp = gzopen(p->fasta, "r");
     if (!fp) {
-        fprintf(stderr, "[ERROR] cannot open reference %s\n", p->fasta);
+        fprintf(stderr, "[ERROR] cannot open reference file %s\n", p->fasta);
         exit(1);
     }
 
@@ -44,7 +50,7 @@ uint64_t process_fasta(params *p, uint128_t **fuzzy_seeds, uint64_t *fuzzy_seeds
 
         uint128_t *chr_fuzzy_seeds;
         uint64_t chr_fuzzy_seeds_len = 0;
-        chr_fuzzy_seeds_len = blend_sketch(bases, len, p->w, p->k, p->blend_bits, p->n_neighbors, chrom_index, &chr_fuzzy_seeds);
+        chr_fuzzy_seeds_len = blend_sb_sketch(bases, len, p->w, p->k, p->blend_bits, p->n_neighbors, chrom_index, &chr_fuzzy_seeds);
 
         if (chr_fuzzy_seeds_len) {
             if (all_fuzzy_seeds_cap <= all_fuzzy_seeds_len + chr_fuzzy_seeds_len) {
@@ -103,10 +109,13 @@ uint64_t process_fasta(params *p, uint128_t **fuzzy_seeds, uint64_t *fuzzy_seeds
     }
     
     map32_t *temp_index_table = *index_table;
+    double total_unique_seed_span = 0;
     for (uint64_t i = 0; i < unique_fuzzy_seeds_len; i++) {
         khint_t k; int absent;
         k = map32_put(temp_index_table, __blend_get_kmer(all_fuzzy_seeds[i]), &absent);
         kh_val(temp_index_table, k) = i;
+
+        total_unique_seed_span += __blend_get_length(all_fuzzy_seeds[i]);
     }
 
     if (all_fuzzy_seeds) {
@@ -160,16 +169,16 @@ uint64_t process_fasta(params *p, uint128_t **fuzzy_seeds, uint64_t *fuzzy_seeds
 
     *fuzzy_seeds_len = relaxed_fuzzy_seeds_len;
 
-    printf("[INFO] Processed reference (unique %lu - %.2f%c, relaxed %lu - %.2f%c, total - %lu)\n", unique_fuzzy_seeds_len, (double)unique_fuzzy_seeds_len / (double)all_fuzzy_seeds_len, '%', relaxed_fuzzy_seeds_len, (double)relaxed_fuzzy_seeds_len / (double)all_fuzzy_seeds_len, '%', all_fuzzy_seeds_len);
+    printf("[INFO] Ref processed (uniq %lu - %.2f%c, relax %lu - %.2f%c, tot %lu, span %.3f)\n", unique_fuzzy_seeds_len, (double)unique_fuzzy_seeds_len / (double)all_fuzzy_seeds_len, '%', relaxed_fuzzy_seeds_len, (double)relaxed_fuzzy_seeds_len / (double)all_fuzzy_seeds_len, '%', all_fuzzy_seeds_len, total_unique_seed_span / unique_fuzzy_seeds_len);
 
     return unique_fuzzy_seeds_len;
 }
 
-void process_records(params *p, map32_t *index_table, uint128_t *fuzzy_seeds, uint64_t relaxed_fuzzy_seeds_len, ref_seq *seqs, uint64_t unique_fuzzy_seeds_len) {
+void process_records(params_t *p, map32_t *index_table, uint128_t *fuzzy_seeds, uint64_t relaxed_fuzzy_seeds_len, ref_seq_t *seqs, uint64_t unique_fuzzy_seeds_len) {
 
     gzFile fp = gzopen(p->fastq, "r");
     if (!fp) {
-        fprintf(stderr, "[ERROR] cannot open reads %s\n", p->fastq);
+        fprintf(stderr, "[ERROR] cannot open reads file %s\n", p->fastq);
         exit(1);
     }
 
@@ -184,11 +193,12 @@ void process_records(params *p, map32_t *index_table, uint128_t *fuzzy_seeds, ui
 
     for (int i = 0; i < p->n_threads; i++) {
         ctx[i].queue = &queue;
-        ctx[i].p = malloc(sizeof(params_lite) * p->n_neighbors);
+        ctx[i].p = malloc(sizeof(params_lite_t) * p->n_neighbors);
         ctx[i].p->k = p->k;
         ctx[i].p->w = p->w;
         ctx[i].p->blend_bits = p->blend_bits;
         ctx[i].p->n_neighbors = p->n_neighbors;
+        ctx[i].p->n_threads = p->n_threads;
         ctx[i].p->seqs = seqs;
         ctx[i].p->fuzzy_seeds = fuzzy_seeds;
         ctx[i].p->unique_fuzzy_seeds_len = unique_fuzzy_seeds_len;
@@ -262,7 +272,25 @@ void process_records(params *p, map32_t *index_table, uint128_t *fuzzy_seeds, ui
         printf("\n");
     }
 
-    printf("[INFO] Elapsed time: %02d:%02d:%02d / %02d:%02d:%02d (%.2f%c) seconds\n", (int)(total_exec_sec/3600), (int)(total_exec_sec / 60) % 3600, ((int)total_exec_sec % 60), (int)((program_end - program_start) / 3600), (int)((program_end - program_start) / 60) % 3600, ((int)(program_end - program_start) % 60), total_exec_sec / (program_end - program_start), '%');
+    printf("[INFO] Elapsed time: %02d:%02d:%02d (%.2f%c idle)\n", (int)((program_end - program_start) / 3600), (int)((program_end - program_start) / 60) % 3600, ((int)(program_end - program_start) % 60), total_exec_sec / (program_end - program_start), '%');
+
+    uint64_t total_var_size = 0;
+    variation_t *variations = NULL;
+    for (int i = 0; i < p->n_threads; i++) {
+        total_var_size += ctx[i].p->fv_variants->size;
+    }
+
+    if (total_var_size) {
+        variations = (variation_t *)malloc(sizeof(variation_t) * total_var_size);
+        
+        total_var_size = 0;
+        for (int i = 0; i < p->n_threads; i++) {
+            if (ctx[i].p->fv_variants->size) {
+                memcpy(variations + total_var_size, ctx[i].p->fv_variants->array, sizeof(variation_t) * ctx[i].p->fv_variants->size);
+            }
+            total_var_size += ctx[i].p->fv_variants->size;
+        }
+    }
 
     stats_t stats = (stats_t){0ULL, 0ULL, 0ULL, 0ULL, 0ULL};
     for (int i = 0; i < p->n_threads; i++) {
@@ -271,14 +299,62 @@ void process_records(params *p, map32_t *index_table, uint128_t *fuzzy_seeds, ui
         stats.no_seed += ctx[i].p->stats.no_seed;
         stats.total_seed_count += ctx[i].p->stats.total_seed_count;
         stats.mismatch_count += ctx[i].p->stats.mismatch_count;
+        var_free(ctx[i].p->fv_variants);
         free(ctx[i].p);
     }
 
-    printf("[INFO] countains_unique: %lu, only_non_unique: %lu, no_seed: %lu, total_seed_count: %lu, mismatch_count: %lu\n", stats.countains_unique, stats.only_non_unique, stats.no_seed, stats.total_seed_count, stats.mismatch_count);
+    printf("[INFO] uniq %lu, non-uniq %lu, noseed %lu | seeds %lu, mm %lu\n", stats.countains_unique, stats.only_non_unique, stats.no_seed, stats.total_seed_count, stats.mismatch_count);
 
-    // TODO: sort reported variatns and take consensus and finalize report
+    if (total_var_size) {
+        // sort reported variants
+        qsort(variations, total_var_size, sizeof(variation_t), cmp_variations);
+
+        // take consensus
+        size_t i = 0;
+
+        uint32_t total_consensus_var = 0;
+
+        FILE *bed = fopen("consensus_snps.bed", "w");
+        if (!bed) {
+            perror("fopen");
+            exit(1);
+        }
+
+        while (i < total_var_size) {
+            variation_t current = variations[i];
+            int count = 1;
+
+            // count how many times this variation repeats
+            while ((i + count) < total_var_size && variations[i + count] == current) {
+                count++;
+            }
+
+            // if consensus is strong enough, print it
+            if (count > p->min_consensus) {
+                total_consensus_var++;
+                // uint64_t chrom = __get_variation_chrom(current);
+                uint64_t pos   = __get_variation_index(current) + 1;
+
+                // BED: 0-based start, 1-based end
+                fprintf(bed,
+                        "chr22\t%lu\t%lu\tCOUNT=%d\n",
+                        pos - 1,
+                        pos,
+                        count);
+                    }
+
+            // move forward past this run
+            i += count;
+        }
+
+        printf("total consensus var count: %u\n", total_consensus_var);
+
+        fclose(bed);
+
+        // cleanup
+        free(variations);
+    }
 }
-
 
 void *worker_process_record(void *arg) {
 
@@ -289,13 +365,21 @@ void *worker_process_record(void *arg) {
     int blend_bits = ctx->p->blend_bits;
     int n_neighbors = ctx->p->n_neighbors;
 
-    ref_seq *seqs = ctx->p->seqs;
+    ref_seq_t *seqs = ctx->p->seqs;
     uint128_t *fuzzy_seeds = (uint128_t *)ctx->p->fuzzy_seeds;
     uint64_t unique_fuzzy_seeds_len = ctx->p->unique_fuzzy_seeds_len;
     uint64_t relaxed_fuzzy_seeds_len = ctx->p->relaxed_fuzzy_seeds_len;
     map32_t *index_table = (map32_t *)ctx->p->index_table;
 
     uint64_t countains_unique = 0, only_non_unique = 0, no_seed = 0, total_seed_count = 0, mismatch_count = 0;
+
+    ctx->p->fv_variants = var_init(__DEFAULT_VARIANT_CAPACITY__ / ctx->p->n_threads);
+    if (!ctx->p->fv_variants) {
+        printf("Coulnd't allocate variants array\n");
+        return NULL;
+    }
+
+    var_bvec_t *variants = ctx->p->fv_variants;
 
     while (1) {
         batch_records_t *records = queue_pop(ctx->queue);
@@ -308,7 +392,7 @@ void *worker_process_record(void *arg) {
 
             uint128_t *temp_fuzzy_seeds;
             uint64_t temp_fuzzy_seeds_len = 0;
-            temp_fuzzy_seeds_len = blend_sketch(bases, len, w, k, blend_bits, n_neighbors, 0, &temp_fuzzy_seeds);
+            temp_fuzzy_seeds_len = blend_sb_sketch(bases, len, w, k, blend_bits, n_neighbors, 0, &temp_fuzzy_seeds);
             
             int found_unique = 0;
             // store in set
@@ -337,7 +421,7 @@ void *worker_process_record(void *arg) {
                         const char *read = bases + read_index;
 
                         // align and report variants in alignment
-                        int alignment_mismatches = banded_align_and_report(ref, ref_span, ref_strand, read, read_span, read_strand, ref_index, ref_id);
+                        int alignment_mismatches = banded_align_and_report(ref, ref_span, ref_strand, read, read_span, read_strand, ref_index, ref_id, variants);
                         mismatch_count += alignment_mismatches;
 
                         continue;
@@ -373,7 +457,7 @@ void *worker_process_record(void *arg) {
                                         const char *read = bases + read_index;
 
                                         // align and report variants in alignment
-                                        int alignment_mismatches = banded_align_and_report(ref, ref_span, ref_strand, read, read_span, read_strand, ref_index, ref_id);
+                                        int alignment_mismatches = banded_align_and_report(ref, ref_span, ref_strand, read, read_span, read_strand, ref_index, ref_id, variants);
                                         mismatch_count += alignment_mismatches;
                                     }
                                 }
@@ -409,7 +493,7 @@ void *worker_process_record(void *arg) {
                                         const char *read = bases + read_index;
 
                                         // align and report variants in alignment
-                                        int alignment_mismatches = banded_align_and_report(ref, ref_span, ref_strand, read, read_span, read_strand, ref_index, ref_id);
+                                        int alignment_mismatches = banded_align_and_report(ref, ref_span, ref_strand, read, read_span, read_strand, ref_index, ref_id, variants);
                                         mismatch_count += alignment_mismatches;
                                     }
                                 }

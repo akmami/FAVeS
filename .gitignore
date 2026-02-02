@@ -9,3 +9,6 @@ sketch/*.tmp
 
 faves
 *.o
+scripts
+
+consensus_snps.bed

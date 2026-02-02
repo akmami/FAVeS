@@ -27,11 +27,11 @@ static inline void reverse_complement(const char *in, char *out, int len) {
     }
 }
 
-void free_seqs(ref_seq **seqs, int seq_len);
+void free_seqs(ref_seq_t **seqs, int seq_len);
 
-int store_seqs(const char *path, ref_seq **seqs);
+int store_seqs(const char *path, ref_seq_t **seqs);
 
-int banded_align_and_report(const char *ref, uint64_t ref_span, int ref_strand, const char *read, uint64_t read_span, int read_strand, uint64_t ref_pos, uint64_t ref_id);
+int banded_align_and_report(const char *ref, uint64_t ref_span, int ref_strand, const char *read, uint64_t read_span, int read_strand, uint64_t ref_pos, uint64_t ref_id, var_bvec_t *variants);
 // -------------------------------------------
 // --- THREADING HELPER FUNCS
 // -------------------------------------------

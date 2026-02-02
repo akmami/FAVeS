@@ -1,9 +1,9 @@
 #include "utils.h"
 
 
-void free_seqs(ref_seq **seqs, int seq_len) {
+void free_seqs(ref_seq_t **seqs, int seq_len) {
     if (seq_len) {
-        ref_seq *temp = *seqs;
+        ref_seq_t *temp = *seqs;
         for (int i = 0; i < seq_len; i++) {
             if (temp[i].len) {
                 free(temp[i].chrom);
@@ -15,7 +15,7 @@ void free_seqs(ref_seq **seqs, int seq_len) {
     }
 }
 
-int store_seqs(const char *path, ref_seq **seqs) {
+int store_seqs(const char *path, ref_seq_t **seqs) {
 
     char *fai_path = (char *)malloc(strlen(path) + 5);
     if (fai_path == NULL) {
@@ -30,7 +30,8 @@ int store_seqs(const char *path, ref_seq **seqs) {
 
     FILE *fai = fopen(fai_path, "r");
     if (!fai) {
-        fprintf(stderr, "[ERROR] Couldn't open %s\n", fai_path);
+        fprintf(stderr, "[ERROR] Index file %s does not exist\n", fai_path);
+        fprintf(stderr, "           samtools faidx %s\n", path);
         exit(-1);
     }
 
@@ -43,7 +44,7 @@ int store_seqs(const char *path, ref_seq **seqs) {
         exit(-1);
     }
     
-    *seqs = (ref_seq *)malloc(sizeof(ref_seq) * chrom_index);
+    *seqs = (ref_seq_t *)malloc(sizeof(ref_seq_t) * chrom_index);
     if (!(*seqs)) {
         fprintf(stderr, "[ERROR] Couldn't allocate memory to ref sequences\n");
         exit(-1);
@@ -76,7 +77,7 @@ int store_seqs(const char *path, ref_seq **seqs) {
     return chrom_index;
 }
 
-int banded_align_and_report(const char *ref, uint64_t ref_span, int ref_strand, const char *read, uint64_t read_span, int read_strand, uint64_t ref_pos, uint64_t ref_id) {
+int banded_align_and_report(const char *ref, uint64_t ref_span, int ref_strand, const char *read, uint64_t read_span, int read_strand, uint64_t ref_pos, uint64_t ref_id, var_bvec_t *variants) {
     
     int ref_len = ref_span;
     int read_len = read_span;
@@ -85,6 +86,8 @@ int banded_align_and_report(const char *ref, uint64_t ref_span, int ref_strand, 
 
     char ref_buf[MAX_LEN];
     char read_buf[MAX_LEN];
+
+    if (ref_len > MAX_LEN) printf("read: %lu\n", ref_span);
 
     // Strand normalization
     if (ref_strand) reverse_complement(ref, ref_buf, ref_len);
@@ -168,37 +171,22 @@ int banded_align_and_report(const char *ref, uint64_t ref_span, int ref_strand, 
     int i = bi, j = bj;
 
     int mismatches = 0;
-#ifdef __DEBUG__
-    char aln_ref[2*MAX_LEN];
-    char aln_read[2*MAX_LEN];
-    char aln_mid[2*MAX_LEN];
-    int aln_len = 0;
-#endif
+
     while (i > 0 && j > 0) {
         int op = bt[i][j];
 
         if (op == 0) {
-#ifdef __DEBUG__
-            aln_ref[aln_len]  = ref_buf[i-1];
-            aln_read[aln_len] = read_buf[j-1];
-            aln_mid[aln_len]  = (ref_buf[i-1] == read_buf[j-1]) ? '|' : '*';
-#endif
             if (ref_buf[i-1] != read_buf[j-1]) {
                 mismatches++;
                 if (i-1 != 0 && j-1 != 0 && i != ref_len && j != read_len) {
                     // printf("SNP\tREFID=%lu\tREADID=%lu\tPOS=%lu\tREF=%c\tALT=%c\n", ref_id, read_id, ref_pos + i - 1, ref_buf[i-1], read_buf[j-1]);
                     // __set_variation_bits(ref_id, ref_pos + i - 1, 0);
+                    var_add(variants, __set_variation_bits(ref_id, ref_pos + i - 1, 0));
                 }
             }
             i--; j--;
         }
         else if (op == 1) {
-#ifdef __DEBUG__
-            aln_ref[aln_len]  = ref_buf[i-1];
-            aln_read[aln_len] = '-';
-            aln_mid[aln_len]  = ' ';
-            mismatches++;
-#endif
             if (i-1 != 0 && j-1 != 0 && i != ref_len && j != read_len) {
                 // printf("DEL\tREFID=%lu\tREADID=%lu\tPOS=%lu\tREF=%c\tALT=%c\n", ref_id, read_id, ref_pos + i - 1, ref_buf[i-1], '-');
                 // __set_variation_bits(ref_id, ref_pos + i - 1, 0);
@@ -206,65 +194,14 @@ int banded_align_and_report(const char *ref, uint64_t ref_span, int ref_strand, 
             i--;
         }
         else {
-#ifdef __DEBUG__
-            aln_ref[aln_len]  = '-';
-            aln_read[aln_len] = read_buf[j-1];
-            aln_mid[aln_len]  = ' ';
-            mismatches++;
-#endif
             if (i-1 != 0 && j-1 != 0 && i != ref_len && j != read_len) {
                 // printf("INS\tREFID=%lu\tREADID=%lu\tPOS=%lu\tREF=%c\tALT=%c\n", ref_id, read_id, ref_pos + i - 1, '-', read_buf[j-1]);
                 // __set_variation_bits(ref_id, ref_pos + i - 1, 0);
             }
             j--;
         }
-
-        // if (mismatches > 20) return 0;
-#ifdef __DEBUG__
-        aln_len++;
-#endif
     }
-#ifdef __DEBUG__
-    if (mismatches) {
-        // reverse alignment strings
-        for (int x = 0; x < aln_len / 2; x++) {
-            char t;
 
-            t = aln_ref[x];
-            aln_ref[x] = aln_ref[aln_len - 1 - x];
-            aln_ref[aln_len - 1 - x] = t;
-
-            t = aln_mid[x];
-            aln_mid[x] = aln_mid[aln_len - 1 - x];
-            aln_mid[aln_len - 1 - x] = t;
-
-            t = aln_read[x];
-            aln_read[x] = aln_read[aln_len - 1 - x];
-            aln_read[aln_len - 1 - x] = t;
-        }
-
-        aln_ref[aln_len]  = '\0';
-        aln_mid[aln_len]  = '\0';
-        aln_read[aln_len] = '\0';
-
-        // print alignment
-        printf("\n");
-        printf("REF : %s\n", aln_ref);
-        printf("      %s\n", aln_mid);
-        printf("READ: %s\n", aln_read);
-
-        printf("--------------------------------------------------------------------------\n");
-
-        // print seqs
-        printf("REF:  %.*s (%d)\n", ref_len, ref, ref_len);
-        printf("READ: %.*s (%d)\n\n", read_len, read, read_len);
-
-        for (int i = 0; i < read_len; i++) {
-            printf("'%c' ", read[i]);
-        }
-        printf(" read: %lu, Pos: %lu, Len: %d\n", read_id, read_pos, len);
-    }
-#endif
     return mismatches;
 }
 

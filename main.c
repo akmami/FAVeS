@@ -7,26 +7,27 @@
 
 int main(int argc, char **argv) {
 
-    params p;
-    init_params(&p);
+    params_t p;
     parse_args(argc, argv, &p);
 
     fprintf(stderr,
         "Params:\n"
-        "  fasta       = %s\n"
-        "  fastq       = %s\n"
-        "  k           = %d\n"
-        "  w           = %d\n"
-        "  blend-bits  = %d\n"
-        "  n-neighbors = %d\n",
+        "   fasta       = %s\n"
+        "   fastq       = %s\n"
+        "   k           = %d\n"
+        "   w           = %d\n"
+        "   blend-bits  = %d\n"
+        "   n-neighbors = %d\n"
+        "   consensus   = %d\n"
+        "   threads     = %d\n",
         p.fasta, p.fastq, p.k, p.w,
-        p.blend_bits, p.n_neighbors
+        p.blend_bits, p.n_neighbors, p.min_consensus, p.n_threads
     );
 
     map32_t *index_table = map32_init();
     uint128_t *fuzzy_seeds;
     uint64_t relaxed_fuzzy_seeds_len, unique_fuzzy_seeds_len;
-    ref_seq *seqs;
+    ref_seq_t *seqs;
     int seq_count = 0;
     unique_fuzzy_seeds_len = process_fasta(&p, &fuzzy_seeds, &relaxed_fuzzy_seeds_len, &index_table, &seqs, &seq_count);
 

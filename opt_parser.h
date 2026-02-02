@@ -12,8 +12,8 @@ int file_exists(char *filename);
 
 void print_usage(const char *prog);
 
-void init_params(params *p);
+void init_params(params_t *p);
 
-void parse_args(int argc, char **argv, params *p);
+void parse_args(int argc, char **argv, params_t *p);
 
 #endif
