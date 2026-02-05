@@ -42,7 +42,7 @@ void queue_push(job_queue_t *q, batch_records_t *job);
 batch_records_t *queue_pop(job_queue_t *q);
 
 static inline batch_records_t *batch_records_create(int cap) {
-    batch_records_t *b = malloc(sizeof(batch_records_t));
+    batch_records_t *b = (batch_records_t *)malloc(sizeof(batch_records_t));
     b->records = (record_t *)malloc(sizeof(record_t) * cap);
     b->len = 0;
     return b;

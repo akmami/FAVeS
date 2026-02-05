@@ -1,21 +1,8 @@
-FASTA := ../data/chm13v2.0.chr1.fa
+FASTA := ../data/chm13v2.0.fa
 
 # Arguments
-KMER_SIZES   := $(shell seq 6 15)
-WINDOW_SIZES := $(shell seq 4 10)
-
-SKIP_KMER 	:= 3
-SKIP_WINDOW := 2
-
-BLEND_K_HIFI := 19
-BLEND_W_HIFI := 50
-BLEND_K_SHORT := 21
-BLEND_W_SHORT := 11
-BLEND_K_BEST := 15
-BLEND_W_BEST := 10
-
 K_VALUES := 15 17 19 21 23 25 27 29 31
-W_VALUES := $(shell seq 10 50)
+W_VALUES := 11 16 21 26 31 36 41 46 50
 
 # Programs
 # fa
@@ -84,9 +71,9 @@ clean:
 	@echo "Cleaned."
 
 ######################################################################
-# FUZZY SEEDS (BLEND)
+# FUZZY SEEDS (BLEND-ALL)
 ######################################################################
-faBlend: check_fasta mkdir_bin mkdir_out blend
+faBlendAll: check_fasta mkdir_bin mkdir_out blend
 	$(GXX) $(CXXFLAGS) -mavx2 -msse4.1 -c $(BLEND)$(CXX)
 	$(GXX) $(CXXFLAGS) -o $(BLEND) $(BLEND).o $(BLENDLIB)
 	@rm $(BLEND).o
@@ -106,6 +93,43 @@ faBlend: check_fasta mkdir_bin mkdir_out blend
 	)
 
 ######################################################################
+# FUZZY SEEDS (BLEND-SINGLE)
+######################################################################
+faBlend: check_fasta mkdir_bin mkdir_out blend
+	$(GXX) $(CXXFLAGS) -mavx2 -msse4.1 -c $(BLEND)$(CXX)
+	$(GXX) $(CXXFLAGS) -o $(BLEND) $(BLEND).o $(BLENDLIB)
+	@rm $(BLEND).o
+	@mv $(BLEND) $(EXECUTABLE_DIR)
+	@mkdir -p ../out/fa-blend
+	@echo "$(FASTA) -> ../out/fa-blend/$(BLEND)-output.txt"
+	@date > ../out/fa-blend/$(BLEND)-output.txt
+	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
+
+	@echo "Running k=21, w=11, b=32" >> ../out/fa-blend/$(BLEND)-output.txt;
+	$(TIME) ../bin/$(BLEND) $(FASTA) 21 11 32 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
+	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
+
+	@echo "Running k=21, w=11, b=38" >> ../out/fa-blend/$(BLEND)-output.txt;
+	$(TIME) ../bin/$(BLEND) $(FASTA) 21 11 38 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
+	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
+
+	@echo "Running k=21, w=11, b=42" >> ../out/fa-blend/$(BLEND)-output.txt;
+	$(TIME) ../bin/$(BLEND) $(FASTA) 21 11 42 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
+	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
+
+	@echo "Running k=15, w=10, b=32" >> ../out/fa-blend/$(BLEND)-output.txt;
+	$(TIME) ../bin/$(BLEND) $(FASTA) 15 10 32 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
+	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
+
+	@echo "Running k=15, w=10, b=38" >> ../out/fa-blend/$(BLEND)-output.txt;
+	$(TIME) ../bin/$(BLEND) $(FASTA) 15 10 38 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
+	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
+
+	@echo "Running k=15, w=10, b=42" >> ../out/fa-blend/$(BLEND)-output.txt;
+	$(TIME) ../bin/$(BLEND) $(FASTA) 15 10 42 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
+	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
+
+######################################################################
 # ERROR TOLERANCE EXPERIMENT
 ######################################################################
 errSim: mkdir_bin mkdir_out blend
@@ -119,11 +143,22 @@ errSim: mkdir_bin mkdir_out blend
 	@echo "Output -> ../out/err-sim/$(SIMULATE)-output.txt"
 	@date > $(OUT_DIR)/err-sim/$(SIMULATE)-output.txt
 	@echo "" >> ../out/err-sim/$(SIMULATE)-output.txt
+
 	$(TIME) ../bin/$(SIMULATE) -g -d ../data/sim >> ../out/err-sim/$(SIMULATE)-output.txt 2>&1
 	@echo "" >> ../out/err-sim/$(SIMULATE)-output.txt
+
 	$(TIME) ../bin/$(SIMULATE) -a --blend --short -d ../data/sim >> ../out/err-sim/$(SIMULATE)-output.txt 2>&1
+	@echo "" >> ../out/err-sim/$(SIMULATE)-output.txt
+	$(TIME) ../bin/$(SIMULATE) -a --blend -k 21 -w 11 -b 38 -d ../data/sim >> ../out/err-sim/$(SIMULATE)-output.txt 2>&1
+	@echo "" >> ../out/err-sim/$(SIMULATE)-output.txt
+	
+	$(TIME) ../bin/$(SIMULATE) -a --blend --hifi -b 32 -d ../data/sim >> ../out/err-sim/$(SIMULATE)-output.txt 2>&1
 	@echo "" >> ../out/err-sim/$(SIMULATE)-output.txt
 	$(TIME) ../bin/$(SIMULATE) -a --blend --hifi -d ../data/sim >> ../out/err-sim/$(SIMULATE)-output.txt 2>&1
 	@echo "" >> ../out/err-sim/$(SIMULATE)-output.txt
-	$(TIME) ../bin/$(SIMULATE) -a --blend -k $(BLEND_K_BEST) -w $(BLEND_W_BEST) -d ../data/sim >> ../out/err-sim/$(SIMULATE)-output.txt 2>&1
+
+	$(TIME) ../bin/$(SIMULATE) -a --blend -k 15 -w 10 -b 32 -d ../data/sim >> ../out/err-sim/$(SIMULATE)-output.txt 2>&1
 	@echo "" >> ../out/err-sim/$(SIMULATE)-output.txt
+	$(TIME) ../bin/$(SIMULATE) -a --blend -k 15 -w 10 -b 38 -d ../data/sim >> ../out/err-sim/$(SIMULATE)-output.txt 2>&1
+	@echo "" >> ../out/err-sim/$(SIMULATE)-output.txt
+	

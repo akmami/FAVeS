@@ -57,7 +57,7 @@ typedef struct {
     program_e program_type;
     const char *dir;
     int progress;
-} params;
+} params_t;
 
 /* ============================
    Sketch representation
@@ -122,7 +122,7 @@ int ensure_dir(const char *path) {
     return -1;
 }
 
-void init_params(params *p) {
+void init_params_t(params_t *p) {
     p->max_seq_len = MAX_SEQ_LEN;
     p->read_len = READ_LEN;
     p->max_sketch = MAX_SKETCH;
@@ -132,7 +132,7 @@ void init_params(params *p) {
     p->progress = PROGRESS;
 }
 
-void parse_args(int argc, char **argv, params *p) {
+void parse_args(int argc, char **argv, params_t *p) {
     static struct option long_opts[] = {
         {"max-seq-len", required_argument, 0, 'L'},
         {"read-len",    required_argument, 0, 'r'},
@@ -159,7 +159,7 @@ void parse_args(int argc, char **argv, params *p) {
     int is_d_set = 0;
 
     int opt, idx;
-    while ((opt = getopt_long(argc, argv, "L:r:s:k:w:h:d:agv", long_opts, &idx)) != -1) {
+    while ((opt = getopt_long(argc, argv, "L:r:s:k:w:b:n:h:d:agv", long_opts, &idx)) != -1) {
         switch (opt) {
         case 'L':
             p->max_seq_len = (uint32_t)atoi(optarg);
@@ -327,7 +327,7 @@ int simulate_errors(const char *ref, char *read, int len, double snp_rate, int *
    SKETCH FUNCTION
    ============================ */
 
-void sketch_blend_sequence(const char *seq, int len, params *p, sketch_t *sk) {
+void sketch_blend_sequence(const char *seq, int len, params_t *p, sketch_t *sk) {
 
     uint128_t *fuzzy_seeds;
     uint64_t fuzzy_seeds_len = 0;
@@ -349,7 +349,7 @@ int cmp_match(const void *a, const void *b) {
     return x->read_pos - y->read_pos;
 }
 
-void evaluate(const sketch_t *ref, const sketch_t *read, int *TP, int *FP, int *FN, params *p) {
+void evaluate(const sketch_t *ref, const sketch_t *read, int *TP, int *FP, int *FN, params_t *p) {
 
     /* ----------------------------
        1. Collect candidate matches
@@ -369,9 +369,9 @@ void evaluate(const sketch_t *ref, const sketch_t *read, int *TP, int *FP, int *
     for (uint64_t i = 0; i < ref->count; i++) {
         for (uint64_t j = 0; j < read->count; j++) {
             if (p->sketch_type == BLEND) {
-                if (BLEND_GET_KMER(ref->anchors[i]) == BLEND_GET_KMER(read->anchors[j])) {
-                    matches[m].ref_pos = BLEND_GET_INDEX(ref->anchors[i]);
-                    matches[m++].read_pos = BLEND_GET_INDEX(read->anchors[j]);
+                if (__blend_get_kmer(ref->anchors[i]) == __blend_get_kmer(read->anchors[j])) {
+                    matches[m].ref_pos = __blend_get_index(ref->anchors[i]);
+                    matches[m++].read_pos = __blend_get_index(read->anchors[j]);
 
                     if (m == capacity) {
                         capacity *= 2;
@@ -448,8 +448,8 @@ void print_metrics(int read_len, int TP, int FP, int FN) {
 int main(int argc, char **argv) {
     srand(time(NULL));
 
-    params p;
-    init_params(&p);
+    params_t p;
+    init_params_t(&p);
     parse_args(argc, argv, &p);
 
     double error_rates[] = {0.001, 0.005, 0.01, 0.02};
@@ -461,7 +461,7 @@ int main(int argc, char **argv) {
         /* debug print */
         if (p.sketch_type == BLEND) {
             fprintf(stderr,
-                "Params:\n"
+                "params:\n"
                 "  max_seq_len = %u\n"
                 "  read_len    = %u\n"
                 "  max_sketch  = %u\n"

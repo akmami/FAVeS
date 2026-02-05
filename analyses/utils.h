@@ -9,9 +9,6 @@
 
 #define DISTANCE_LENGTH 65536
 
-#define min(x, y) (x < y ? x : y)
-#define max(x, y) (x > y ? x : y)
-
 typedef struct {
 	uint64_t minimum;
 	uint64_t maximum;
@@ -31,7 +28,7 @@ std::string format_double(double value, size_t precision = 2) {
     return ss.str();
 };
 
-double mean(int (&numbers)[DISTANCE_LENGTH], std::vector<uint32_t> numbersXL = {}) {
+double mean(int (&numbers)[DISTANCE_LENGTH], std::vector<uint64_t> numbersXL = {}) {
     double sum = 0;
     double count = 0;
     for (size_t i = 0; i < DISTANCE_LENGTH; i++) {
@@ -45,7 +42,7 @@ double mean(int (&numbers)[DISTANCE_LENGTH], std::vector<uint32_t> numbersXL = {
     return sum / count;
 };
 
-double stdev(int (&numbers)[DISTANCE_LENGTH], std::vector<uint32_t> numbersXL = {}) {
+double stdev(int (&numbers)[DISTANCE_LENGTH], std::vector<uint64_t> numbersXL = {}) {
     double mean_value = mean(numbers, numbersXL);
     double count = 0;
     for (size_t i = 0; i < DISTANCE_LENGTH; i++) {
