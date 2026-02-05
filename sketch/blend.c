@@ -188,7 +188,7 @@ uint64_t blend_sb_sketch(const char *str, int str_len, int window_size, int kmer
             current_kmer_span++;
             if (current_kmer_span >= kmer_size && kmer_span < 256) {
                 minimizer_info.x = (hash64(current_kmer[strand], mask_blend_bits) << 14) | kmer_span;
-                minimizer_info.y = ((uint64_t)str_id << 32) | (((uint32_t)char_index - kmer_span) << 1) | strand;
+                minimizer_info.y = ((uint64_t)str_id << 32) | (((uint32_t)char_index + 1 - kmer_span) << 1) | strand;
             }
         } else {
             current_kmer_span = 0;
