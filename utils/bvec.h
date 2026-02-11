@@ -13,11 +13,11 @@
     } prefix##_bvec_t;                                                                          \
                                                                                                 \
     static inline prefix##_bvec_t *prefix##_init(size_t capacity) {                             \
-        if (capacity == 0) return NULL;                                                         \
         prefix##_bvec_t *bvec = (prefix##_bvec_t *)malloc(sizeof(prefix##_bvec_t));             \
-        bvec->array = (type *)malloc(sizeof(type) * capacity);                                  \
-        if (!bvec->array) return NULL;                                                          \
         bvec->size = 0;                                                                         \
+        if (capacity == 0) return bvec;                                                         \
+        bvec->array = (type *)malloc(sizeof(type) * capacity);                                  \
+        if (!bvec->array) { free(bvec); return NULL; }                                          \
         bvec->capacity = capacity;                                                              \
         return bvec;                                                                            \
     }                                                                                           \

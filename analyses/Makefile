@@ -1,4 +1,5 @@
-FASTA := ../data/chm13v2.0.fa
+CHM13_FASTA := ../data/chm13v2.0.fa
+HG38_FASTA := ../data/hg38.fa
 
 # Arguments
 K_VALUES := 15 17 19 21 23 25 27 29 31
@@ -44,12 +45,12 @@ mkdir_out:
 	fi
 
 check_fasta:
-	@if [ -z "$(FASTA)" ]; then \
+	@if [ -z "$(CHM13_FASTA)" ]; then \
         echo "FASTA is not set or is empty. Exiting"; \
 		exit 1; \
     fi
-	@if [ ! -f $(FASTA) ]; then \
-		echo "$(FASTA) does not exist. Exiting."; \
+	@if [ ! -f $(CHM13_FASTA) ]; then \
+		echo "$(CHM13_FASTA) does not exist. Exiting."; \
 		exit 1; \
 	fi
 
@@ -80,14 +81,14 @@ faBlendAll: check_fasta mkdir_bin mkdir_out blend
 	@mv $(BLEND) $(EXECUTABLE_DIR)
 
 	@mkdir -p ../out/fa-blend
-	@echo "$(FASTA) -> ../out/fa-blend/$(BLEND)-output.txt"
+	@echo "$(CHM13_FASTA) -> ../out/fa-blend/$(BLEND)-output.txt"
 	@date > ../out/fa-blend/$(BLEND)-output.txt
 	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
 
 	@$(foreach k,$(K_VALUES), \
 		$(foreach w,$(W_VALUES), \
 			echo "Running k=$(k), w=$(w)" >> ../out/fa-blend/$(BLEND)-output.txt; \
-			$(TIME) ../bin/$(BLEND) $(FASTA) $(k) $(w) >> ../out/fa-blend/$(BLEND)-output.txt 2>&1; \
+			$(TIME) ../bin/$(BLEND) $(CHM13_FASTA) $(k) $(w) >> ../out/fa-blend/$(BLEND)-output.txt 2>&1; \
 			echo "" >> ../out/fa-blend/$(BLEND)-output.txt; \
 		) \
 	)
@@ -101,32 +102,44 @@ faBlend: check_fasta mkdir_bin mkdir_out blend
 	@rm $(BLEND).o
 	@mv $(BLEND) $(EXECUTABLE_DIR)
 	@mkdir -p ../out/fa-blend
-	@echo "$(FASTA) -> ../out/fa-blend/$(BLEND)-output.txt"
+	@echo "Output -> ../out/fa-blend/$(BLEND)-output.txt"
 	@date > ../out/fa-blend/$(BLEND)-output.txt
 	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
 
-	@echo "Running k=21, w=11, b=32" >> ../out/fa-blend/$(BLEND)-output.txt;
-	$(TIME) ../bin/$(BLEND) $(FASTA) 21 11 32 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
+	../bin/$(BLEND) $(CHM13_FASTA) 21 11 32 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
 	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
 
-	@echo "Running k=21, w=11, b=38" >> ../out/fa-blend/$(BLEND)-output.txt;
-	$(TIME) ../bin/$(BLEND) $(FASTA) 21 11 38 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
+	../bin/$(BLEND) $(CHM13_FASTA) 21 11 38 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
 	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
 
-	@echo "Running k=21, w=11, b=42" >> ../out/fa-blend/$(BLEND)-output.txt;
-	$(TIME) ../bin/$(BLEND) $(FASTA) 21 11 42 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
+	../bin/$(BLEND) $(CHM13_FASTA) 21 11 42 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
 	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
 
-	@echo "Running k=15, w=10, b=32" >> ../out/fa-blend/$(BLEND)-output.txt;
-	$(TIME) ../bin/$(BLEND) $(FASTA) 15 10 32 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
+	../bin/$(BLEND) $(CHM13_FASTA) 15 10 32 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
 	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
 
-	@echo "Running k=15, w=10, b=38" >> ../out/fa-blend/$(BLEND)-output.txt;
-	$(TIME) ../bin/$(BLEND) $(FASTA) 15 10 38 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
+	../bin/$(BLEND) $(CHM13_FASTA) 15 10 38 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
 	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
 
-	@echo "Running k=15, w=10, b=42" >> ../out/fa-blend/$(BLEND)-output.txt;
-	$(TIME) ../bin/$(BLEND) $(FASTA) 15 10 42 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
+	../bin/$(BLEND) $(CHM13_FASTA) 15 10 42 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
+	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
+#######################################################################################
+	../bin/$(BLEND) $(HG38_FASTA) 21 11 32 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
+	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
+
+	../bin/$(BLEND) $(HG38_FASTA) 21 11 38 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
+	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
+
+	../bin/$(BLEND) $(HG38_FASTA) 21 11 42 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
+	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
+
+	../bin/$(BLEND) $(HG38_FASTA) 15 10 32 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
+	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
+
+	../bin/$(BLEND) $(HG38_FASTA) 15 10 38 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
+	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
+
+	../bin/$(BLEND) $(HG38_FASTA) 15 10 42 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
 	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
 
 ######################################################################

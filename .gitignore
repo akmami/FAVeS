@@ -11,4 +11,9 @@ faves
 *.o
 scripts
 
+consensus.bed
 consensus_snps.bed
+
+analyses/script.*
+analyses/blend_fuzzy_seeds.h
+analyses/blend_test.c

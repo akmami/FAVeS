@@ -31,6 +31,8 @@
 
 #define abs_diff(x, y) ((x) < (y) ? (y) - (x) : (x) - (y))
 
+#define to_uppercase_mask 0xDF
+ 
 
 // -----------------------------------------------------------
 // -----------------------------------------------------------
@@ -46,6 +48,7 @@ typedef struct {
 typedef struct {
     char *fasta;
     char *fastq;
+    char *bed;
     int k;
     int w;
     int blend_bits;
@@ -61,6 +64,7 @@ typedef struct {
     uint64_t no_seed;           // read-wise
     uint64_t total_seed_count;  // overall
     uint64_t mismatch_count;    // overall
+    uint64_t neighbour_count;   // blend span
 } stats_t;
 
 // -----------------------------------------------------------
@@ -68,19 +72,19 @@ typedef struct {
 // VARIATION RELATED STRUCTURES
 // -----------------------------------------------------------
 // -----------------------------------------------------------
-static const uint64_t variation_index = ((1ULL << 52) - 1) << 2;
+static const uint64_t variation_index = ((1ULL << 52) - 1) << 3;
 
-#define __get_variation_chrom(x) ((x) >> 54)
-#define __get_variation_index(x) (((x) & variation_index) >> 2) 
-#define __get_variation_type(x) ((x) & 3)
+#define __get_variation_chrom(x) ((x) >> 55)
+#define __get_variation_index(x) (((x) & variation_index) >> 3) 
+#define __get_variation_type(x) ((x) & 7)
 
-#define __set_variation_chrom(x, idx) ((x) |= ((uint64_t)(idx) << 54))
-#define __set_variation_index(x, idx) ((x) |= ((uint64_t)(idx) << 2)) 
-#define __set_variation_type(x, type) ((x) |= ((type) & 3))
-#define __set_variation_bits(chrom, index, type) (((chrom) << 54) | ((index) << 2) | ((type) & 3))
+#define __set_variation_chrom(x, idx) ((x) |= ((uint64_t)(idx) << 55))
+#define __set_variation_index(x, idx) ((x) |= ((uint64_t)(idx) << 3)) 
+#define __set_variation_type(x, type) ((x) |= ((type) & 7))
+#define __set_variation_bits(chrom, index, type) (((chrom) << 55) | ((index) << 3) | ((type) & 7))
 #define __set_variation(x, chrom, index, type) ((x) = __set_variation_bits(chrom, index, type))
 
-typedef uint64_t variation_t; // crom (10 bits) + index (52 bits) + type (2 bits)
+typedef uint64_t variation_t; // chrom (9 bits) + index (52 bits) + type (3 bits)
 
 BVEC_INIT(var, variation_t)
 
@@ -97,8 +101,7 @@ typedef struct {
     int n_threads;
     ref_seq_t *seqs;
     void *fuzzy_seeds;
-    uint64_t unique_fuzzy_seeds_len;
-    uint64_t relaxed_fuzzy_seeds_len;
+    uint64_t fuzzy_seeds_len;
     void *index_table;
     stats_t stats;
     var_bvec_t *fv_variants;

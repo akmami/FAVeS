@@ -1,6 +1,25 @@
 #include "utils.h"
 
 
+static unsigned char seq_nt4_table[256] = {
+	0, 1, 2, 3,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
+	4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
+	4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
+	4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
+	4, 0, 4, 1,  4, 4, 4, 2,  4, 4, 4, 4,  4, 4, 4, 4,
+	4, 4, 4, 4,  3, 3, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
+	4, 0, 4, 1,  4, 4, 4, 2,  4, 4, 4, 4,  4, 4, 4, 4,
+	4, 4, 4, 4,  3, 3, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
+	4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
+	4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
+	4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
+	4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
+	4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
+	4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
+	4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
+	4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4
+};
+
 void free_seqs(ref_seq_t **seqs, int seq_len) {
     if (seq_len) {
         ref_seq_t *temp = *seqs;
@@ -77,7 +96,7 @@ int store_seqs(const char *path, ref_seq_t **seqs) {
     return chrom_index;
 }
 
-int banded_align_and_report(const char *ref, uint64_t ref_span, int ref_strand, const char *read, uint64_t read_span, int read_strand, uint64_t ref_pos, uint64_t ref_id, var_bvec_t *variants) {
+int banded_align_and_report(const char *ref, uint64_t ref_span, const char *read, uint64_t read_span, int read_strand, uint64_t ref_pos, uint64_t ref_id, var_bvec_t *variants) {
     
     int ref_len = ref_span;
     int read_len = read_span;
@@ -87,11 +106,8 @@ int banded_align_and_report(const char *ref, uint64_t ref_span, int ref_strand, 
     char ref_buf[MAX_LEN];
     char read_buf[MAX_LEN];
 
-    if (ref_len > MAX_LEN) printf("read: %lu\n", ref_span);
-
     // Strand normalization
-    if (ref_strand) reverse_complement(ref, ref_buf, ref_len);
-    else memcpy(ref_buf, ref, ref_len);
+    memcpy(ref_buf, ref, ref_len);
     
     if (read_strand) reverse_complement(read, read_buf, read_len);
     else memcpy(read_buf, read, read_len);
@@ -122,7 +138,7 @@ int banded_align_and_report(const char *ref, uint64_t ref_span, int ref_strand, 
             int best = NEG_INF, op = -1;
 
             // diagonal
-            int diag = dp[i-1][j-1] + (ref_buf[i-1] == read_buf[j-1] ? MATCH : MISMATCH);
+            int diag = dp[i-1][j-1] + ((ref_buf[i-1] & to_uppercase_mask) == (read_buf[j-1] & to_uppercase_mask) ? MATCH : MISMATCH);
             best = diag; 
             op = 0; // diagonal movement
 
@@ -176,27 +192,23 @@ int banded_align_and_report(const char *ref, uint64_t ref_span, int ref_strand, 
         int op = bt[i][j];
 
         if (op == 0) {
-            if (ref_buf[i-1] != read_buf[j-1]) {
+            if ((ref_buf[i-1] & to_uppercase_mask) != (read_buf[j-1] & to_uppercase_mask)) {
                 mismatches++;
                 if (i-1 != 0 && j-1 != 0 && i != ref_len && j != read_len) {
-                    // printf("SNP\tREFID=%lu\tREADID=%lu\tPOS=%lu\tREF=%c\tALT=%c\n", ref_id, read_id, ref_pos + i - 1, ref_buf[i-1], read_buf[j-1]);
-                    // __set_variation_bits(ref_id, ref_pos + i - 1, 0);
-                    var_add(variants, __set_variation_bits(ref_id, ref_pos + i - 1, 0));
+                    var_add(variants, __set_variation_bits(ref_id, ref_pos + i - 1, seq_nt4_table[(int)read_buf[j-1]]));
                 }
             }
             i--; j--;
         }
         else if (op == 1) {
             if (i-1 != 0 && j-1 != 0 && i != ref_len && j != read_len) {
-                // printf("DEL\tREFID=%lu\tREADID=%lu\tPOS=%lu\tREF=%c\tALT=%c\n", ref_id, read_id, ref_pos + i - 1, ref_buf[i-1], '-');
-                // __set_variation_bits(ref_id, ref_pos + i - 1, 0);
+                // do nothing for indels at this point
             }
             i--;
         }
         else {
             if (i-1 != 0 && j-1 != 0 && i != ref_len && j != read_len) {
-                // printf("INS\tREFID=%lu\tREADID=%lu\tPOS=%lu\tREF=%c\tALT=%c\n", ref_id, read_id, ref_pos + i - 1, '-', read_buf[j-1]);
-                // __set_variation_bits(ref_id, ref_pos + i - 1, 0);
+                // do nothing for indels at this point
             }
             j--;
         }

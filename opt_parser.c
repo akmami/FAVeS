@@ -12,6 +12,7 @@ void print_usage(const char *prog) {
         "Options:\n"
         "  -f, --fasta <file>        FASTA file\n"
         "  -q, --fastq <file>        FASTQ file\n"
+        "  -o, --output <file>       BED file\n"
         "  -k, --kmer <int>          k-mer size [%d]\n"
         "  -w, --window <int>        window size [%d]\n"
         "  -b, --blend-bits <int>    number of bits for hash [%d]\n"
@@ -41,6 +42,7 @@ void parse_args(int argc, char **argv, params_t *p) {
     static struct option long_opts[] = {
         {"fasta",       required_argument, 0, 'f'},
         {"fastq",       required_argument, 0, 'q'},
+        {"output",      required_argument, 0, 'o'},
         {"kmer",        required_argument, 0, 'k'},
         {"window",      required_argument, 0, 'w'},
         {"blend-bits",  required_argument, 0, 'b'},
@@ -54,9 +56,10 @@ void parse_args(int argc, char **argv, params_t *p) {
 
     int is_f_set = 0; 
     int is_q_set = 0;
+    int is_o_set = 0;
 
     int opt, idx;
-    while ((opt = getopt_long(argc, argv, "f:q:k:w:b:n:c:t:ph", long_opts, &idx)) != -1) {
+    while ((opt = getopt_long(argc, argv, "f:q:o:k:w:b:n:c:t:ph", long_opts, &idx)) != -1) {
         switch (opt) {
         case 'f':
             p->fasta = optarg;
@@ -65,6 +68,10 @@ void parse_args(int argc, char **argv, params_t *p) {
         case 'q':
             p->fastq = optarg;
             is_q_set = 1;
+            break;
+        case 'o':
+            p->bed = optarg;
+            is_o_set = 1;
             break;
         case 'k':
             p->k = atoi(optarg);
@@ -115,6 +122,12 @@ void parse_args(int argc, char **argv, params_t *p) {
 
     if (!is_q_set) {
         fprintf(stderr, "[ERROR] query is not provided (-q <file>)\n");
+        print_usage(argv[0]);
+        exit(1);
+    }
+
+    if (!is_o_set) {
+        fprintf(stderr, "[ERROR] output file is not provided (-o <file>)\n");
         print_usage(argv[0]);
         exit(1);
     }

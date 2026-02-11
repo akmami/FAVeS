@@ -182,7 +182,11 @@ uint64_t blend_sb_sketch(const char *str, int str_len, int window_size, int kmer
             current_kmer[0] = ((current_kmer[0] << 2 | ch) & mask_kmer); // forward k-mer
             current_kmer[1] = ((current_kmer[1] >> 2) | (3ULL ^ ch) << rc_shift_bits); // reverse k-mer k-mer
             
-            if (current_kmer[0] == current_kmer[1]) continue; // skip symmetric k-mers
+            if (current_kmer[0] == current_kmer[1]) { // skip symmetric k-mers
+                seed_buffer[seed_buffer_pos] = (uint128_t){ UINT64_MAX, UINT64_MAX };
+                if (++seed_buffer_pos == window_size) seed_buffer_pos = 0;
+                continue; 
+            }
             
             strand = current_kmer[0] < current_kmer[1] ? 0 : 1; // strand
             current_kmer_span++;
@@ -191,8 +195,34 @@ uint64_t blend_sb_sketch(const char *str, int str_len, int window_size, int kmer
                 minimizer_info.y = ((uint64_t)str_id << 32) | (((uint32_t)char_index + 1 - kmer_span) << 1) | strand;
             }
         } else {
+            // this part is important for BLEND seeds
+            if (min.x != UINT64_MAX) {
+                process_sb_seed(min);
+            }
+
+            // reset BLEND state
             current_kmer_span = 0;
             kmer_span = 0;
+            forward_neighbors_processed = reverse_neighbors_processed = 0;
+            forward_blend_buffer_pos = reverse_blend_buffer_pos = 0;
+            blend_value = 0;
+            forward_blend_count_lsb = _mm256_set1_epi8(0);
+            forward_blend_count_msb = _mm256_set1_epi8(0);
+            reverse_blend_count_lsb = _mm256_set1_epi8(0);
+            reverse_blend_count_msb = _mm256_set1_epi8(0);
+            min = (uint128_t){ UINT64_MAX, UINT64_MAX };
+            
+            // consume the entire invalid run, INCLUDING the current base
+            while (char_index < str_len && seq_nt4_table[(uint8_t)str[char_index]] >= 4) {
+                seed_buffer[seed_buffer_pos] = (uint128_t){ UINT64_MAX, UINT64_MAX };
+                if (++seed_buffer_pos == window_size) seed_buffer_pos = 0;
+                char_index++;
+            }
+
+            // compensate for the for-loop's char_index++
+            char_index--;
+
+            continue;
         }
         seed_buffer[seed_buffer_pos] = minimizer_info; // need to do this here as appropriate seed_buffer[seed_buffer_pos] are needed below
         
