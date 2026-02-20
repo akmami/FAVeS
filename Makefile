@@ -15,7 +15,7 @@ LDFLAGS := -lm -pthread -lz
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(CXXLIBS) $(LDFLAGS) -L lib -lblend -pthread
+	$(CC) $(CFLAGS) -o $@ $^ $(CXXLIBS) $(LDFLAGS) -L lib -lblend -lminimizer 
 	rm -f $(OBJS)
 
 %.o: %.c
@@ -36,4 +36,10 @@ blend:
 	ar rcs lib/libblend.a blend.o
 	@rm -f blend.o
 
-install: clean blend $(TARGET)
+minimizer: 
+	@mkdir -p lib
+	$(CC) $(CFLAGS) -c sketch/minimizer.c -I minimizer
+	ar rcs lib/libminimizer.a minimizer.o
+	@rm -f minimizer.o
+
+install: clean blend minimizer $(TARGET)

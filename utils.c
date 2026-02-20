@@ -201,15 +201,15 @@ int banded_align_and_report(const char *ref, uint64_t ref_span, const char *read
             i--; j--;
         }
         else if (op == 1) {
-            if (i-1 != 0 && j-1 != 0 && i != ref_len && j != read_len) {
-                // do nothing for indels at this point
-            }
+            // if (i-1 != 0 && j-1 != 0 && i != ref_len && j != read_len) {
+            //     // do nothing for indels at this point
+            // }
             i--;
         }
         else {
-            if (i-1 != 0 && j-1 != 0 && i != ref_len && j != read_len) {
-                // do nothing for indels at this point
-            }
+            // if (i-1 != 0 && j-1 != 0 && i != ref_len && j != read_len) {
+            //     // do nothing for indels at this point
+            // }
             j--;
         }
     }

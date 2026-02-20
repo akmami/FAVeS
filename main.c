@@ -25,19 +25,19 @@ int main(int argc, char **argv) {
     );
 
     map32_t *index_table = map32_init();
-    uint128_t *fuzzy_seeds;
-    uint64_t fuzzy_seeds_len;
+    uint128_t *seeds;
+    uint64_t seeds_len;
     ref_seq_t *seqs;
     int seq_count = 0;
-    process_fasta(&p, &fuzzy_seeds, &fuzzy_seeds_len, &index_table, &seqs, &seq_count);
+    
+    // process reference and index
+    process_fasta(&p, &seeds, &seeds_len, &index_table, &seqs, &seq_count);
 
-    process_records(&p, index_table, fuzzy_seeds, fuzzy_seeds_len, seqs);
+    // process reads and call variants. at the end, it will free seqeunces and index
+    process_records(&p, index_table, seeds, seeds_len, seqs);
 
     // cleanup
-    map32_destroy(index_table);
     free_seqs(&seqs, seq_count);
-
-    if (fuzzy_seeds_len) free(fuzzy_seeds);
 
     return 0;
 }

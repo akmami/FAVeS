@@ -39,6 +39,11 @@
         bvec->array[bvec->size++] = element;                                                    \
     }                                                                                           \
                                                                                                 \
+    static inline void prefix##_clear(prefix##_bvec_t *bvec) {                                  \
+        bvec->size = 0;                                                                         \
+    }                                                                                           \
+                                                                                                \
+                                                                                                \
     static inline void prefix##_free(prefix##_bvec_t *bvec) {                                   \
         if (!bvec) return;                                                                      \
         if (bvec->array) {                                                                      \

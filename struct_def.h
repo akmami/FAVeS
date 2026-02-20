@@ -6,6 +6,8 @@
 #include "pthread.h"
 #include "utils/bvec.h"
 
+#define __TOOL_SHORT_NAME__ "fvs"
+
 #define __DEFAULT_BLEND_K__ 21
 #define __DEFAULT_BLEND_w__ 11
 #define __DEFAULT_BLEND_BITS__ 32
@@ -27,11 +29,23 @@
 #define BAND        20     // +-10 bp band
 #define MAX_LEN     512   // max extension length
 #define NEG_INF     -100000000
-#define MIN_SCORE   64
+#define MIN_SCORE   128
 
 #define abs_diff(x, y) ((x) < (y) ? (y) - (x) : (x) - (y))
 
 #define to_uppercase_mask 0xDF
+
+
+// -----------------------------------------------------------
+// -----------------------------------------------------------
+// SKETCHING RELATED MACRO DEFINITIONS
+// -----------------------------------------------------------
+// -----------------------------------------------------------
+#define __sketch_get_kmer(kmer) __blend_get_kmer(kmer)
+#define __sketch_get_length(kmer) __blend_get_length(kmer)
+#define __sketch_get_reference_id(kmer) __blend_get_reference_id(kmer)
+#define __sketch_get_index(kmer) __blend_get_index(kmer)
+#define __sketch_get_strand(kmer) __blend_get_strand(kmer)
  
 
 // -----------------------------------------------------------
@@ -64,7 +78,7 @@ typedef struct {
     uint64_t no_seed;           // read-wise
     uint64_t total_seed_count;  // overall
     uint64_t mismatch_count;    // overall
-    uint64_t neighbour_count;   // blend span
+    uint64_t neighbour_count;   // span
 } stats_t;
 
 // -----------------------------------------------------------
@@ -100,8 +114,8 @@ typedef struct {
     int n_neighbors;
     int n_threads;
     ref_seq_t *seqs;
-    void *fuzzy_seeds;
-    uint64_t fuzzy_seeds_len;
+    void *seeds;
+    uint64_t seeds_len;
     void *index_table;
     stats_t stats;
     var_bvec_t *fv_variants;

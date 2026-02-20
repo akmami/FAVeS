@@ -5,29 +5,31 @@ KSEQ_INIT(gzFile, gzread)
 
 static char int2var[5] = {'A', 'C', 'G', 'T', 'N'};
 
+BVEC_INIT(uint64, uint64_t)
+
 static inline int cmp_variations(const void *a, const void *b) {
     uint64_t x = *(const uint64_t *)a;
     uint64_t y = *(const uint64_t *)b;
     return (x > y) - (x < y);
 }
 
-static inline int cmp_fuzzy_seeds(const void *a, const void *b) {
+static inline int cmp_seeds(const void *a, const void *b) {
     const uint64_t x = (((uint128_t *)a)->x >> 14);
     const uint64_t y = (((uint128_t *)b)->x >> 14);
     return (x > y) - (x < y);
 }
 
-void process_fasta(params_t *p, uint128_t **fuzzy_seeds, uint64_t *fuzzy_seeds_len, map32_t **index_table, ref_seq_t **seqs, int *chrom_count) {
+void process_fasta(params_t *p, uint128_t **seeds, uint64_t *seeds_len, map32_t **index_table, ref_seq_t **seqs, int *chrom_count) {
 
     *chrom_count = store_seqs(p->fasta, seqs);
-    *fuzzy_seeds_len = 0;
+    *seeds_len = 0;
 
-    uint128_t *all_fuzzy_seeds;
-    uint64_t all_fuzzy_seeds_len = 0;
-    uint64_t all_fuzzy_seeds_cap = __DEFAULT_SKETCH_CAPACITY__;
+    uint128_t *all_seeds;
+    uint64_t all_seeds_len = 0;
+    uint64_t all_seeds_cap = __DEFAULT_SKETCH_CAPACITY__;
 
-    all_fuzzy_seeds = (uint128_t *)malloc(sizeof(uint128_t) * all_fuzzy_seeds_cap);
-    if (!all_fuzzy_seeds) {
+    all_seeds = (uint128_t *)malloc(sizeof(uint128_t) * all_seeds_cap);
+    if (!all_seeds) {
         fprintf(stderr, "[ERROR] couldn't allocate array\n");
         exit(1);
     }
@@ -50,27 +52,27 @@ void process_fasta(params_t *p, uint128_t **fuzzy_seeds, uint64_t *fuzzy_seeds_l
         memcpy(((*seqs)[chrom_index]).chrom, bases, len);
         (*seqs)[chrom_index].chrom[len] = '\0';
 
-        uint128_t *chr_fuzzy_seeds;
-        uint64_t chr_fuzzy_seeds_len = 0;
-        chr_fuzzy_seeds_len = blend_sb_sketch(bases, len, p->w, p->k, p->blend_bits, p->n_neighbors, chrom_index, &chr_fuzzy_seeds);
+        uint128_t *chr_seeds;
+        uint64_t chr_seeds_len = 0;
+        chr_seeds_len = blend_sb_sketch(bases, len, p->w, p->k, p->blend_bits, p->n_neighbors, chrom_index, &chr_seeds);
 
-        if (chr_fuzzy_seeds_len) {
-            if (all_fuzzy_seeds_cap <= all_fuzzy_seeds_len + chr_fuzzy_seeds_len) {
-                while (all_fuzzy_seeds_cap <= all_fuzzy_seeds_len + chr_fuzzy_seeds_len) {
-                    all_fuzzy_seeds_cap *= 2;
+        if (chr_seeds_len) {
+            if (all_seeds_cap <= all_seeds_len + chr_seeds_len) {
+                while (all_seeds_cap <= all_seeds_len + chr_seeds_len) {
+                    all_seeds_cap *= 2;
                 }
-                uint128_t *temp = (uint128_t *)realloc(all_fuzzy_seeds, sizeof(uint128_t) * all_fuzzy_seeds_cap);
+                uint128_t *temp = (uint128_t *)realloc(all_seeds, sizeof(uint128_t) * all_seeds_cap);
                 if (!temp) {
                     fprintf(stderr, "[ERROR] couldn't reallocate array\n");
                     exit(1);
                 }
-                all_fuzzy_seeds = temp;
+                all_seeds = temp;
             }
             
-            memcpy(all_fuzzy_seeds + all_fuzzy_seeds_len, chr_fuzzy_seeds, sizeof(uint128_t) * chr_fuzzy_seeds_len);
-            all_fuzzy_seeds_len += chr_fuzzy_seeds_len;
+            memcpy(all_seeds + all_seeds_len, chr_seeds, sizeof(uint128_t) * chr_seeds_len);
+            all_seeds_len += chr_seeds_len;
 
-            free(chr_fuzzy_seeds);
+            free(chr_seeds);
         }
 
         chrom_index++;
@@ -80,8 +82,8 @@ void process_fasta(params_t *p, uint128_t **fuzzy_seeds, uint64_t *fuzzy_seeds_l
     gzclose(fp);
 
     // if no seeds are found, then no need to proceed
-    if (!all_fuzzy_seeds_len) {
-        free(all_fuzzy_seeds);
+    if (!all_seeds_len) {
+        free(all_seeds);
         return;
     }
 
@@ -92,8 +94,8 @@ void process_fasta(params_t *p, uint128_t **fuzzy_seeds, uint64_t *fuzzy_seeds_l
         exit(1);
     }
 
-    for (uint64_t i = 0; i < all_fuzzy_seeds_len; i++) {
-        uint32_t kmer = (uint32_t)__blend_get_kmer(all_fuzzy_seeds[i]);
+    for (uint64_t i = 0; i < all_seeds_len; i++) {
+        uint32_t kmer = (uint32_t)__sketch_get_kmer(all_seeds[i]);
 
         khint_t k = map8_get(dup_map, kmer);
         if (k == kh_end(dup_map)) {
@@ -116,11 +118,11 @@ void process_fasta(params_t *p, uint128_t **fuzzy_seeds, uint64_t *fuzzy_seeds_l
     }
 
     map32_t *temp_index_table = *index_table;
-    uint64_t unique_fuzzy_seeds_len = 0;
+    uint64_t unique_seeds_len = 0;
     double total_unique_seed_span = 0;
 
-    for (uint64_t i = 0; i < all_fuzzy_seeds_len; i++) {
-        uint32_t kmer = (uint32_t)__blend_get_kmer(all_fuzzy_seeds[i]);
+    for (uint64_t i = 0; i < all_seeds_len; i++) {
+        uint32_t kmer = (uint32_t)__sketch_get_kmer(all_seeds[i]);
 
         khint_t kd = map8_get(dup_map, kmer);
         if (kd == kh_end(dup_map)) continue; // safety
@@ -135,20 +137,20 @@ void process_fasta(params_t *p, uint128_t **fuzzy_seeds, uint64_t *fuzzy_seeds_l
         k = map32_put(temp_index_table, kmer, &absent);
         kh_val(temp_index_table, k) = (uint32_t)i;
 
-        unique_fuzzy_seeds_len++;
-        total_unique_seed_span += __blend_get_length(all_fuzzy_seeds[i]);
+        unique_seeds_len++;
+        total_unique_seed_span += __sketch_get_length(all_seeds[i]);
     }
 
     // done with temp map
     map8_destroy(dup_map);
 
-    *fuzzy_seeds = all_fuzzy_seeds;
-    *fuzzy_seeds_len = all_fuzzy_seeds_len;
+    *seeds = all_seeds;
+    *seeds_len = all_seeds_len;
 
-    printf("[INFO] Ref processed (uniq #: %lu - %.2f%c, seed #: %lu, span: %.2f)\n", unique_fuzzy_seeds_len, (double)unique_fuzzy_seeds_len / (double)all_fuzzy_seeds_len, '%', all_fuzzy_seeds_len, total_unique_seed_span / unique_fuzzy_seeds_len);
+    printf("[%s:ref] Processed (uniq #: %lu - %.2f%c, seed #: %lu, span avg: %.2f)\n", __TOOL_SHORT_NAME__, unique_seeds_len, (double)unique_seeds_len / (double)all_seeds_len, '%', all_seeds_len, total_unique_seed_span / unique_seeds_len);
 }
 
-void process_records(params_t *p, map32_t *index_table, uint128_t *fuzzy_seeds, uint64_t fuzzy_seeds_len, ref_seq_t *seqs) {
+void process_records(params_t *p, map32_t *index_table, uint128_t *seeds, uint64_t seeds_len, ref_seq_t *seqs) {
 
     gzFile fp = gzopen(p->fastq, "r");
     if (!fp) {
@@ -174,8 +176,8 @@ void process_records(params_t *p, map32_t *index_table, uint128_t *fuzzy_seeds, 
         ctx[i].p->n_neighbors = p->n_neighbors;
         ctx[i].p->n_threads = p->n_threads;
         ctx[i].p->seqs = seqs;
-        ctx[i].p->fuzzy_seeds = fuzzy_seeds;
-        ctx[i].p->fuzzy_seeds_len = fuzzy_seeds_len;
+        ctx[i].p->seeds = seeds;
+        ctx[i].p->seeds_len = seeds_len;
         ctx[i].p->index_table = index_table;
         pthread_create(&threads[i], NULL, worker_process_record, (ctx + i));
     }
@@ -209,7 +211,7 @@ void process_records(params_t *p, map32_t *index_table, uint128_t *fuzzy_seeds, 
         if (p->progress) {
             time_t now = time(NULL);
             if (now - last_print >= __DEFAULT_PROGRESS_INTERVAL__) {   // every 1 second
-                printf("\r[INFO] Processed %ld records ...", read_count);
+                printf("\r[%s:live] Processed %ld records ...", __TOOL_SHORT_NAME__, read_count);
                 fflush(stdout);
                 last_print = now;
             }
@@ -245,7 +247,11 @@ void process_records(params_t *p, map32_t *index_table, uint128_t *fuzzy_seeds, 
         printf("\n");
     }
 
-    printf("[INFO] Elapsed time: %02d:%02d:%02d (%.2f%c idle)\n", (int)((program_end - program_start) / 3600), (int)((program_end - program_start) / 60) % 3600, ((int)(program_end - program_start) % 60), total_exec_sec / (program_end - program_start), '%');
+    printf("[%s:time] elapsed: %02d:%02d:%02d (%.2f%c idle)\n", __TOOL_SHORT_NAME__, (int)((program_end - program_start) / 3600), (int)((program_end - program_start) / 60) % 3600, ((int)(program_end - program_start) % 60), total_exec_sec / (program_end - program_start), '%');
+
+    // cleanup unnesesary indices
+    map32_destroy(index_table);
+    if (seeds_len) free(seeds);
 
     uint64_t total_var_size = 0;
     variation_t *variations = NULL;
@@ -277,7 +283,7 @@ void process_records(params_t *p, map32_t *index_table, uint128_t *fuzzy_seeds, 
         free(ctx[i].p);
     }
 
-    printf("[INFO] query: uniq %lu, non-uniq %lu, noseed %lu | seeds %lu, mm %lu | span #: %lu\n", stats.countains_unique, stats.only_non_unique, stats.no_seed, stats.total_seed_count, stats.mismatch_count, stats.neighbour_count);
+    printf("[%s:records] query: uniq %lu, non-uniq %lu, no-seed %lu | seed #: %lu, mismatch #: %lu | radious #: %lu\n", __TOOL_SHORT_NAME__, stats.countains_unique, stats.only_non_unique, stats.no_seed, stats.total_seed_count, stats.mismatch_count, stats.neighbour_count);
 
     uint64_t total_consensus_var = 0;
 
@@ -334,7 +340,7 @@ void process_records(params_t *p, map32_t *index_table, uint128_t *fuzzy_seeds, 
         free(variations);
     }
 
-    printf("[INFO] read: var %lu, snp: %lu\n", total_var_size, total_consensus_var);
+    printf("[%s:records] read: var %lu, snp: %lu\n", __TOOL_SHORT_NAME__, total_var_size, total_consensus_var);
 }
 
 void *worker_process_record(void *arg) {
@@ -347,9 +353,11 @@ void *worker_process_record(void *arg) {
     int n_neighbors = ctx->p->n_neighbors;
 
     ref_seq_t *seqs = ctx->p->seqs;
-    uint128_t *fuzzy_seeds = (uint128_t *)ctx->p->fuzzy_seeds;
-    uint64_t fuzzy_seeds_len = ctx->p->fuzzy_seeds_len;
+    uint128_t *seeds = (uint128_t *)ctx->p->seeds;
+    uint64_t seeds_len = ctx->p->seeds_len;
     map32_t *index_table = (map32_t *)ctx->p->index_table;
+
+    uint64_bvec_t *ids = uint64_init(64);
 
     uint64_t countains_unique = 0, only_non_unique = 0, no_seed = 0, total_seed_count = 0, mismatch_count = 0, neighbour_count = 0;
 
@@ -370,69 +378,83 @@ void *worker_process_record(void *arg) {
             char *bases = records->records[record_index].bases;
             int len = records->records[record_index].len;
 
-            uint128_t *temp_fuzzy_seeds;
-            uint64_t temp_fuzzy_seeds_len = 0;
-            temp_fuzzy_seeds_len = blend_sb_sketch(bases, len, w, k, blend_bits, n_neighbors, 0, &temp_fuzzy_seeds);
+            uint128_t *temp_seeds;
+            uint64_t temp_seeds_len = 0;
+            temp_seeds_len = blend_sb_sketch(bases, len, w, k, blend_bits, n_neighbors, 0, &temp_seeds);
             
             int found_unique = 0;
             int last_valid_seed_index_read = -1;
             int last_valid_seed_index_ref = -1;
+
+            uint64_clear(ids);
             
-            for (uint64_t read_seed_index = 0; read_seed_index < temp_fuzzy_seeds_len; read_seed_index++) {
-                khint_t k = map32_get(index_table, __blend_get_kmer(temp_fuzzy_seeds[read_seed_index]));
+            for (uint64_t read_seed_index = 0; read_seed_index < temp_seeds_len; read_seed_index++) {
+                khint_t k = map32_get(index_table, __sketch_get_kmer(temp_seeds[read_seed_index]));
 
-                if (k < kh_end(index_table)) {
-                    uint32_t ref_seed_index = kh_val(index_table, k);
-
-                    if (fuzzy_seeds_len <= ref_seed_index) {
-                        fprintf(stderr, "[ERROR] Weird stuff is ongoing.\n");
-                        abort();
-                    }
-                    
-                    found_unique++;
-
-                    for (int seed_iter_index = read_seed_index; last_valid_seed_index_read < seed_iter_index; seed_iter_index--) {
-                        // uint64_t ref_kmer = __blend_get_kmer(fuzzy_seeds[ref_seed_index]);
-                        uint64_t ref_span = __blend_get_length(fuzzy_seeds[ref_seed_index]);
-                        uint64_t ref_index = __blend_get_index(fuzzy_seeds[ref_seed_index]);
-                        uint64_t ref_id = __blend_get_reference_id(fuzzy_seeds[ref_seed_index]);
-                        // int ref_strand = __blend_get_strand(fuzzy_seeds[ref_seed_index]);
-
-                        uint64_t read_span = __blend_get_length(temp_fuzzy_seeds[seed_iter_index]);
-                        uint64_t read_index = __blend_get_index(temp_fuzzy_seeds[seed_iter_index]);
-                        int read_strand = __blend_get_strand(temp_fuzzy_seeds[seed_iter_index]);
-
-                        // get substrings
-                        const char *ref = seqs[ref_id].chrom + ref_index;
-                        const char *read = bases + read_index;
-
-                        // align and report variants in alignment
-                        int alignment_mismatches = banded_align_and_report(ref, ref_span, read, read_span, read_strand, ref_index, ref_id, variants);
-                        mismatch_count += alignment_mismatches;
-
-                        neighbour_count++;
-                    }
-                    neighbour_count--;
-
-                    last_valid_seed_index_ref = ref_seed_index;
-                    last_valid_seed_index_read = read_seed_index;
+                if (k == kh_end(index_table)) {
+                    continue;
                 }
+
+                uint64_t ref_seed_index = kh_val(index_table, k);
+
+                if (seeds_len <= ref_seed_index) {
+                    fprintf(stderr, "[ERROR] Weird stuff is ongoing.\n");
+                    abort();
+                }
+
+                uint64_add(ids, (ref_seed_index | (read_seed_index << 32)));
+            }
+             
+            assert(ids->size <= temp_seeds_len);
+
+            for (uint32_t unique_ids_index = 0; unique_ids_index < ids->size; unique_ids_index++) {
+                found_unique++;
+
+                uint32_t ref_seed_index = ids->array[unique_ids_index] & 0xFFFFFFFF;
+                uint32_t read_seed_index = ids->array[unique_ids_index] >> 32;
+
+                for (int seed_iter_index = read_seed_index; last_valid_seed_index_read < seed_iter_index; seed_iter_index--) {
+                    // uint64_t ref_kmer = __sketch_get_kmer(seeds[ref_seed_index]);
+                    uint64_t ref_span = __sketch_get_length(seeds[ref_seed_index]);
+                    uint64_t ref_index = __sketch_get_index(seeds[ref_seed_index]);
+                    uint64_t ref_id = __sketch_get_reference_id(seeds[ref_seed_index]);
+                    // int ref_strand = __sketch_get_strand(seeds[ref_seed_index]);
+
+                    uint64_t read_span = __sketch_get_length(temp_seeds[seed_iter_index]);
+                    uint64_t read_index = __sketch_get_index(temp_seeds[seed_iter_index]);
+                    int read_strand = __sketch_get_strand(temp_seeds[seed_iter_index]);
+
+                    // get substrings
+                    const char *ref = seqs[ref_id].chrom + ref_index;
+                    const char *read = bases + read_index;
+
+                    // align and report variants in alignment
+                    int alignment_mismatches = banded_align_and_report(ref, ref_span, read, read_span, read_strand, ref_index, ref_id, variants);
+                    mismatch_count += alignment_mismatches;
+
+                    neighbour_count++;
+                }
+                neighbour_count--;
+
+                last_valid_seed_index_ref = ref_seed_index;
+                last_valid_seed_index_read = read_seed_index;
+                
             }
 
             if (last_valid_seed_index_read != -1) {
                 last_valid_seed_index_ref++;
                 last_valid_seed_index_read++;
 
-                while ((uint64_t)last_valid_seed_index_read < temp_fuzzy_seeds_len) {
-                    // uint64_t ref_kmer = __blend_get_kmer(fuzzy_seeds[seed_index]);
-                    uint64_t ref_span = __blend_get_length(fuzzy_seeds[last_valid_seed_index_ref]);
-                    uint64_t ref_index = __blend_get_index(fuzzy_seeds[last_valid_seed_index_ref]);
-                    uint64_t ref_id = __blend_get_reference_id(fuzzy_seeds[last_valid_seed_index_ref]);
-                    // int ref_strand = __blend_get_strand(fuzzy_seeds[seed_index]);
+                while ((uint64_t)last_valid_seed_index_read < temp_seeds_len) {
+                    // uint64_t ref_kmer = __sketch_get_kmer(seeds[seed_index]);
+                    uint64_t ref_span = __sketch_get_length(seeds[last_valid_seed_index_ref]);
+                    uint64_t ref_index = __sketch_get_index(seeds[last_valid_seed_index_ref]);
+                    uint64_t ref_id = __sketch_get_reference_id(seeds[last_valid_seed_index_ref]);
+                    // int ref_strand = __sketch_get_strand(seeds[seed_index]);
 
-                    uint64_t read_span = __blend_get_length(temp_fuzzy_seeds[last_valid_seed_index_read]);
-                    uint64_t read_index = __blend_get_index(temp_fuzzy_seeds[last_valid_seed_index_read]);
-                    int read_strand = __blend_get_strand(temp_fuzzy_seeds[last_valid_seed_index_read]);
+                    uint64_t read_span = __sketch_get_length(temp_seeds[last_valid_seed_index_read]);
+                    uint64_t read_index = __sketch_get_index(temp_seeds[last_valid_seed_index_read]);
+                    int read_strand = __sketch_get_strand(temp_seeds[last_valid_seed_index_read]);
 
                     // get substrings
                     const char *ref = seqs[ref_id].chrom + ref_index;
@@ -447,13 +469,13 @@ void *worker_process_record(void *arg) {
                 }
             }
 
-            if (temp_fuzzy_seeds_len) free(temp_fuzzy_seeds);
+            if (temp_seeds_len) free(temp_seeds);
 
-            total_seed_count += temp_fuzzy_seeds_len;
+            total_seed_count += temp_seeds_len;
 
             if (found_unique) {
                 countains_unique++;
-            } else if (temp_fuzzy_seeds_len) {
+            } else if (temp_seeds_len) {
                 only_non_unique++;
             } else {
                 no_seed++;
@@ -463,6 +485,8 @@ void *worker_process_record(void *arg) {
         // cleanup
         batch_records_destroy(records);
     }
+
+    uint64_free(ids);
 
     ctx->p->stats.countains_unique = countains_unique;
     ctx->p->stats.only_non_unique = only_non_unique;
