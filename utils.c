@@ -38,7 +38,7 @@ int store_seqs(const char *path, ref_seq_t **seqs) {
 
     char *fai_path = (char *)malloc(strlen(path) + 5);
     if (fai_path == NULL) {
-        fprintf(stderr, "[ERROR] Memory allocation failed\n");
+        fprintf(stderr, "[%s::err] Memory allocation failed\n", __TOOL_SHORT_NAME__);
         exit(-1);
     }
     sprintf(fai_path, "%s.fai", path);
@@ -49,7 +49,7 @@ int store_seqs(const char *path, ref_seq_t **seqs) {
 
     FILE *fai = fopen(fai_path, "r");
     if (!fai) {
-        fprintf(stderr, "[ERROR] Index file %s does not exist\n", fai_path);
+        fprintf(stderr, "[%s::err] Index file %s does not exist\n", __TOOL_SHORT_NAME__, fai_path);
         fprintf(stderr, "           samtools faidx %s\n", path);
         exit(-1);
     }
@@ -59,13 +59,13 @@ int store_seqs(const char *path, ref_seq_t **seqs) {
     }
 
     if (chrom_index == 0) {
-        fprintf(stderr, "[ERROR] Index file is empty.\n");
+        fprintf(stderr, "[%s::err] Index file is empty.\n", __TOOL_SHORT_NAME__);
         exit(-1);
     }
     
     *seqs = (ref_seq_t *)malloc(sizeof(ref_seq_t) * chrom_index);
     if (!(*seqs)) {
-        fprintf(stderr, "[ERROR] Couldn't allocate memory to ref sequences\n");
+        fprintf(stderr, "[%s::err] Couldn't allocate memory to ref sequences\n", __TOOL_SHORT_NAME__);
         exit(-1);
     }
 

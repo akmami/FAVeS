@@ -7,6 +7,27 @@ static char int2var[5] = {'A', 'C', 'G', 'T', 'N'};
 
 BVEC_INIT(uint64, uint64_t)
 
+#define align(seqs, read, ref_seed, read_seed, mismatch_count) { \
+    /* uint64_t ref_kmer = __sketch_get_kmer(ref_seed); */ \
+    uint64_t ref_span = __sketch_get_length(ref_seed); \
+    uint64_t ref_index = __sketch_get_index(ref_seed); \
+    uint64_t ref_id = __sketch_get_reference_id(ref_seed); \
+    /* int ref_strand = __sketch_get_strand(read_seed); */ \
+    uint64_t read_span = __sketch_get_length(read_seed); \
+    uint64_t read_index = __sketch_get_index(read_seed); \
+    int read_strand = __sketch_get_strand(read_seed); \
+    /* get substrings */ \
+    const char *ref = seqs[ref_id].chrom + ref_index; \
+    const char *read = bases + read_index; \
+    /* align and report variants in alignment */ \
+    int alignment_mismatches = banded_align_and_report(ref, ref_span, read, read_span, read_strand, ref_index, ref_id, variants); \
+    mismatch_count += alignment_mismatches; \
+}
+
+#define pack_id(x, y) ((((x) & 0xFFFFFFFF) | ((y) << 32)))
+#define unpack_ref(x) ((uint32_t)((x) & 0xFFFFFFFF))
+#define unpack_read(x) ((uint32_t)((x) >> 32))
+
 static inline int cmp_variations(const void *a, const void *b) {
     uint64_t x = *(const uint64_t *)a;
     uint64_t y = *(const uint64_t *)b;
@@ -14,8 +35,8 @@ static inline int cmp_variations(const void *a, const void *b) {
 }
 
 static inline int cmp_seeds(const void *a, const void *b) {
-    const uint64_t x = (((uint128_t *)a)->x >> 14);
-    const uint64_t y = (((uint128_t *)b)->x >> 14);
+    const uint64_t x = __sketch_get_kmer(*(uint128_t *)a);
+    const uint64_t y = __sketch_get_kmer(*(uint128_t *)b);
     return (x > y) - (x < y);
 }
 
@@ -30,13 +51,13 @@ void process_fasta(params_t *p, uint128_t **seeds, uint64_t *seeds_len, map32_t 
 
     all_seeds = (uint128_t *)malloc(sizeof(uint128_t) * all_seeds_cap);
     if (!all_seeds) {
-        fprintf(stderr, "[ERROR] couldn't allocate array\n");
+        fprintf(stderr, "[%s::err] couldn't allocate array\n", __TOOL_SHORT_NAME__);
         exit(1);
     }
 
     gzFile fp = gzopen(p->fasta, "r");
     if (!fp) {
-        fprintf(stderr, "[ERROR] cannot open reference file %s\n", p->fasta);
+        fprintf(stderr, "[%s::err] cannot open reference file %s\n", __TOOL_SHORT_NAME__, p->fasta);
         exit(1);
     }
 
@@ -55,7 +76,7 @@ void process_fasta(params_t *p, uint128_t **seeds, uint64_t *seeds_len, map32_t 
         uint128_t *chr_seeds;
         uint64_t chr_seeds_len = 0;
         chr_seeds_len = blend_sb_sketch(bases, len, p->w, p->k, p->blend_bits, p->n_neighbors, chrom_index, &chr_seeds);
-
+        
         if (chr_seeds_len) {
             if (all_seeds_cap <= all_seeds_len + chr_seeds_len) {
                 while (all_seeds_cap <= all_seeds_len + chr_seeds_len) {
@@ -63,7 +84,7 @@ void process_fasta(params_t *p, uint128_t **seeds, uint64_t *seeds_len, map32_t 
                 }
                 uint128_t *temp = (uint128_t *)realloc(all_seeds, sizeof(uint128_t) * all_seeds_cap);
                 if (!temp) {
-                    fprintf(stderr, "[ERROR] couldn't reallocate array\n");
+                    fprintf(stderr, "[%s::err] couldn't reallocate array\n", __TOOL_SHORT_NAME__);
                     exit(1);
                 }
                 all_seeds = temp;
@@ -90,7 +111,7 @@ void process_fasta(params_t *p, uint128_t **seeds, uint64_t *seeds_len, map32_t 
     // find unique seeds
     map8_t *dup_map = map8_init();
     if (!dup_map) {
-        fprintf(stderr, "[ERROR] couldn't allocate maps\n");
+        fprintf(stderr, "[%s::err] couldn't allocate maps\n", __TOOL_SHORT_NAME__);
         exit(1);
     }
 
@@ -154,7 +175,7 @@ void process_records(params_t *p, map32_t *index_table, uint128_t *seeds, uint64
 
     gzFile fp = gzopen(p->fastq, "r");
     if (!fp) {
-        fprintf(stderr, "[ERROR] cannot open reads file %s\n", p->fastq);
+        fprintf(stderr, "[%s::err] cannot open reads file %s\n", __TOOL_SHORT_NAME__, p->fastq);
         exit(1);
     }
 
@@ -271,19 +292,20 @@ void process_records(params_t *p, map32_t *index_table, uint128_t *seeds, uint64
         }
     }
 
-    stats_t stats = (stats_t){0ULL, 0ULL, 0ULL, 0ULL, 0ULL, 0ULL};
+    stats_t stats = (stats_t){0ULL, 0ULL, 0ULL, 0ULL, 0ULL, 0ULL, 0ULL};
     for (int i = 0; i < p->n_threads; i++) {
         stats.countains_unique += ctx[i].p->stats.countains_unique;
         stats.only_non_unique += ctx[i].p->stats.only_non_unique;
         stats.no_seed += ctx[i].p->stats.no_seed;
         stats.total_seed_count += ctx[i].p->stats.total_seed_count;
+        stats.total_uniq_count += ctx[i].p->stats.total_uniq_count;
         stats.mismatch_count += ctx[i].p->stats.mismatch_count;
         stats.neighbour_count += ctx[i].p->stats.neighbour_count;
         var_free(ctx[i].p->fv_variants);
         free(ctx[i].p);
     }
 
-    printf("[%s:records] query: uniq %lu, non-uniq %lu, no-seed %lu | seed #: %lu, mismatch #: %lu | radious #: %lu\n", __TOOL_SHORT_NAME__, stats.countains_unique, stats.only_non_unique, stats.no_seed, stats.total_seed_count, stats.mismatch_count, stats.neighbour_count);
+    printf("[%s:records] query: uniq %lu, non-uniq %lu, no-seed %lu | seed #: %lu, uniq #: %lu, mismatch #: %lu | radious #: %lu\n", __TOOL_SHORT_NAME__, stats.countains_unique, stats.only_non_unique, stats.no_seed, stats.total_seed_count, stats.total_uniq_count, stats.mismatch_count, stats.neighbour_count);
 
     uint64_t total_consensus_var = 0;
 
@@ -359,7 +381,7 @@ void *worker_process_record(void *arg) {
 
     uint64_bvec_t *ids = uint64_init(64);
 
-    uint64_t countains_unique = 0, only_non_unique = 0, no_seed = 0, total_seed_count = 0, mismatch_count = 0, neighbour_count = 0;
+    uint64_t countains_unique = 0, only_non_unique = 0, no_seed = 0, total_seed_count = 0, total_uniq_count = 0, mismatch_count = 0, neighbour_count = 0;
 
     ctx->p->fv_variants = var_init(__DEFAULT_VARIANT_CAPACITY__ / ctx->p->n_threads);
     if (!ctx->p->fv_variants) {
@@ -382,90 +404,56 @@ void *worker_process_record(void *arg) {
             uint64_t temp_seeds_len = 0;
             temp_seeds_len = blend_sb_sketch(bases, len, w, k, blend_bits, n_neighbors, 0, &temp_seeds);
             
-            int found_unique = 0;
-            int last_valid_seed_index_read = -1;
-            int last_valid_seed_index_ref = -1;
+            int last_read_anchor_idx = -1;
+            int last_ref_anchor_idx = -1;
 
             uint64_clear(ids);
             
-            for (uint64_t read_seed_index = 0; read_seed_index < temp_seeds_len; read_seed_index++) {
-                khint_t k = map32_get(index_table, __sketch_get_kmer(temp_seeds[read_seed_index]));
+            for (uint64_t read_anchor_idx = 0; read_anchor_idx < temp_seeds_len; read_anchor_idx++) {
+                khint_t k = map32_get(index_table, __sketch_get_kmer(temp_seeds[read_anchor_idx]));
 
-                if (k == kh_end(index_table)) {
-                    continue;
-                }
+                if (k == kh_end(index_table)) continue;
 
-                uint64_t ref_seed_index = kh_val(index_table, k);
+                uint64_t ref_anchor_idx = kh_val(index_table, k);
 
-                if (seeds_len <= ref_seed_index) {
-                    fprintf(stderr, "[ERROR] Weird stuff is ongoing.\n");
+                if (seeds_len <= ref_anchor_idx) {
+                    fprintf(stderr, "[%s:err] Weird stuff is ongoing.\n", __TOOL_SHORT_NAME__);
                     abort();
                 }
 
-                uint64_add(ids, (ref_seed_index | (read_seed_index << 32)));
+                uint64_add(ids, pack_id(ref_anchor_idx, read_anchor_idx));
             }
              
             assert(ids->size <= temp_seeds_len);
 
+            total_uniq_count += ids->size;
+
             for (uint32_t unique_ids_index = 0; unique_ids_index < ids->size; unique_ids_index++) {
-                found_unique++;
 
-                uint32_t ref_seed_index = ids->array[unique_ids_index] & 0xFFFFFFFF;
-                uint32_t read_seed_index = ids->array[unique_ids_index] >> 32;
+                uint32_t ref_anchor_idx = unpack_ref(ids->array[unique_ids_index]);
+                uint32_t read_anchor_idx = unpack_read(ids->array[unique_ids_index]);
 
-                for (int seed_iter_index = read_seed_index; last_valid_seed_index_read < seed_iter_index; seed_iter_index--) {
-                    // uint64_t ref_kmer = __sketch_get_kmer(seeds[ref_seed_index]);
-                    uint64_t ref_span = __sketch_get_length(seeds[ref_seed_index]);
-                    uint64_t ref_index = __sketch_get_index(seeds[ref_seed_index]);
-                    uint64_t ref_id = __sketch_get_reference_id(seeds[ref_seed_index]);
-                    // int ref_strand = __sketch_get_strand(seeds[ref_seed_index]);
+                uint32_t i = 0;
 
-                    uint64_t read_span = __sketch_get_length(temp_seeds[seed_iter_index]);
-                    uint64_t read_index = __sketch_get_index(temp_seeds[seed_iter_index]);
-                    int read_strand = __sketch_get_strand(temp_seeds[seed_iter_index]);
-
-                    // get substrings
-                    const char *ref = seqs[ref_id].chrom + ref_index;
-                    const char *read = bases + read_index;
-
-                    // align and report variants in alignment
-                    int alignment_mismatches = banded_align_and_report(ref, ref_span, read, read_span, read_strand, ref_index, ref_id, variants);
-                    mismatch_count += alignment_mismatches;
-
+                for (int seed_iter_index = read_anchor_idx; i <= ref_anchor_idx && last_read_anchor_idx < seed_iter_index; seed_iter_index--) {
+                    align(seqs, read, seeds[ref_anchor_idx - i], temp_seeds[seed_iter_index], mismatch_count)
                     neighbour_count++;
+                    i++;
                 }
                 neighbour_count--;
 
-                last_valid_seed_index_ref = ref_seed_index;
-                last_valid_seed_index_read = read_seed_index;
-                
+                last_ref_anchor_idx = ref_anchor_idx;
+                last_read_anchor_idx = read_anchor_idx;
             }
 
-            if (last_valid_seed_index_read != -1) {
-                last_valid_seed_index_ref++;
-                last_valid_seed_index_read++;
+            if (last_read_anchor_idx != -1) {
+                last_ref_anchor_idx++;
+                last_read_anchor_idx++;
 
-                while ((uint64_t)last_valid_seed_index_read < temp_seeds_len) {
-                    // uint64_t ref_kmer = __sketch_get_kmer(seeds[seed_index]);
-                    uint64_t ref_span = __sketch_get_length(seeds[last_valid_seed_index_ref]);
-                    uint64_t ref_index = __sketch_get_index(seeds[last_valid_seed_index_ref]);
-                    uint64_t ref_id = __sketch_get_reference_id(seeds[last_valid_seed_index_ref]);
-                    // int ref_strand = __sketch_get_strand(seeds[seed_index]);
-
-                    uint64_t read_span = __sketch_get_length(temp_seeds[last_valid_seed_index_read]);
-                    uint64_t read_index = __sketch_get_index(temp_seeds[last_valid_seed_index_read]);
-                    int read_strand = __sketch_get_strand(temp_seeds[last_valid_seed_index_read]);
-
-                    // get substrings
-                    const char *ref = seqs[ref_id].chrom + ref_index;
-                    const char *read = bases + read_index;
-
-                    // align and report variants in alignment
-                    int alignment_mismatches = banded_align_and_report(ref, ref_span, read, read_span, read_strand, ref_index, ref_id, variants);
-                    mismatch_count += alignment_mismatches;  
-                    
-                    last_valid_seed_index_read++;
-                    last_valid_seed_index_ref++;
+                while ((uint64_t)last_read_anchor_idx < temp_seeds_len) {
+                    align(seqs, read, seeds[last_ref_anchor_idx], temp_seeds[last_read_anchor_idx], mismatch_count)                    
+                    last_read_anchor_idx++;
+                    last_ref_anchor_idx++;
                 }
             }
 
@@ -473,7 +461,7 @@ void *worker_process_record(void *arg) {
 
             total_seed_count += temp_seeds_len;
 
-            if (found_unique) {
+            if (ids->size) {
                 countains_unique++;
             } else if (temp_seeds_len) {
                 only_non_unique++;
@@ -491,8 +479,9 @@ void *worker_process_record(void *arg) {
     ctx->p->stats.countains_unique = countains_unique;
     ctx->p->stats.only_non_unique = only_non_unique;
     ctx->p->stats.no_seed = no_seed;
-    ctx->p->stats.mismatch_count = mismatch_count;
     ctx->p->stats.total_seed_count = total_seed_count;
+    ctx->p->stats.total_uniq_count = total_uniq_count;
+    ctx->p->stats.mismatch_count = mismatch_count;
     ctx->p->stats.neighbour_count = neighbour_count;
     return NULL;
 }

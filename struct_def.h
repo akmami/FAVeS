@@ -11,7 +11,7 @@
 #define __DEFAULT_BLEND_K__ 21
 #define __DEFAULT_BLEND_w__ 11
 #define __DEFAULT_BLEND_BITS__ 32
-#define __DEFAULT_BLEND_NEIGHBOR_NUMBER__ 5
+#define __DEFAULT_BLEND_NEIGHBOR_NUMBER__ 7
 #define __DEFAULT_CONSENSUS_THRESHOLD__ 10
 #define __DEFAULT_THREAD_NUMBER__ 4
 #define __DEFAULT_SKETCH_CAPACITY__ 40000000
@@ -22,6 +22,7 @@
 #define __DEFAULT_PROGRESS_INTERVAL__ 1
 
 #define __DEFAULT_PROGRESS__ 0
+#define __DEFAULT_VERBOSE__ 0
 
 #define MATCH       2
 #define MISMATCH    -5
@@ -46,7 +47,6 @@
 #define __sketch_get_reference_id(kmer) __blend_get_reference_id(kmer)
 #define __sketch_get_index(kmer) __blend_get_index(kmer)
 #define __sketch_get_strand(kmer) __blend_get_strand(kmer)
- 
 
 // -----------------------------------------------------------
 // -----------------------------------------------------------
@@ -70,9 +70,11 @@ typedef struct {
     int min_consensus;
     int n_threads;
     int progress;
+    int verbose;
 } params_t;
 
 typedef struct {
+    uint64_t total_uniq_count;  // per read
     uint64_t countains_unique;  // read-wise
     uint64_t only_non_unique;   // read-wise
     uint64_t no_seed;           // read-wise

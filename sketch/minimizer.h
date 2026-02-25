@@ -10,8 +10,8 @@ extern "C" {
 #include <assert.h>
 #include <string.h>
 
-#define __minimizer_get_kmer(seed) 		    ((seed).x >> 14)
-#define __minimizer_get_length(seed) 		((seed).x & 0x3FFF)
+#define __minimizer_get_kmer(seed) 		    ((seed).x >> 8)
+#define __minimizer_get_length(seed) 		((seed).x & 0xFF)
 #define __minimizer_get_reference_id(seed)  (((seed).y >> 32))
 #define __minimizer_get_index(seed) 		(((seed).y & 0xFFFFFFFF) >> 1)
 #define __minimizer_get_strand(seed) 		(((seed).y & 1))
@@ -19,7 +19,7 @@ extern "C" {
 #ifndef __UINT128_T__
 #define __UINT128_T__
 typedef struct {
-	uint64_t x; // kmer(50) + span(14)
+	uint64_t x; // kmer(50) + span(8)
 	uint64_t y; // reference_id(32) + index(31) + strand(1)
 } uint128_t;
 #endif
@@ -36,9 +36,8 @@ typedef struct {
  * @param reference_id   reference ID; will be embeded to minimizer struct
  * 
  * @note kmer is encoded as:
- * 		minimizer.x = hash
- * 		minimizer.y = pos << 32 | len 
- * 		minimizer.z = ref << 1 | strand
+ * 		minimizer.x = hash << 8 | span
+ * 		minimizer.y = ref << 32 | pos << 1 | strand 
  */
 uint64_t sketch_minimizers(const char *str, int len, int window, int kmer_size, int only_symmetric, uint32_t reference_id, uint128_t **minimizers);
 
