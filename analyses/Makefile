@@ -1,5 +1,5 @@
 CHM13_FASTA := ../data/chm13v2.0.fa
-HG38_FASTA := ../data/hg38.fa
+HG38_FASTA := ../data/human_v38.fasta
 
 # Arguments
 K_VALUES := 15 17 19 21 23 25 27 29 31
@@ -105,42 +105,16 @@ faBlend: check_fasta mkdir_bin mkdir_out blend
 	@echo "Output -> ../out/fa-blend/$(BLEND)-output.txt"
 	@date > ../out/fa-blend/$(BLEND)-output.txt
 	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
-
-	../bin/$(BLEND) $(CHM13_FASTA) 21 11 32 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
-	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
-
-	../bin/$(BLEND) $(CHM13_FASTA) 21 11 38 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
-	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
-
-	../bin/$(BLEND) $(CHM13_FASTA) 21 11 42 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
-	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
-
-	../bin/$(BLEND) $(CHM13_FASTA) 15 10 32 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
-	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
-
-	../bin/$(BLEND) $(CHM13_FASTA) 15 10 38 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
-	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
-
-	../bin/$(BLEND) $(CHM13_FASTA) 15 10 42 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
-	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
-#######################################################################################
-	../bin/$(BLEND) $(HG38_FASTA) 21 11 32 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
-	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
-
-	../bin/$(BLEND) $(HG38_FASTA) 21 11 38 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
-	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
-
-	../bin/$(BLEND) $(HG38_FASTA) 21 11 42 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
-	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
-
-	../bin/$(BLEND) $(HG38_FASTA) 15 10 32 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
-	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
-
-	../bin/$(BLEND) $(HG38_FASTA) 15 10 38 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
-	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
-
-	../bin/$(BLEND) $(HG38_FASTA) 15 10 42 >> ../out/fa-blend/$(BLEND)-output.txt 2>&1;
-	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
+	@for params in "21 11" "15 10"; do \
+		for third in 32 38 42; do \
+			for fourth in 5 7; do \
+				set -- $$params; \
+				../bin/$(BLEND) $(HG38_FASTA) $$1 $$2 $$third $$fourth >> ../out/fa-blend/$(BLEND)-output.txt 2>&1; \
+				echo "" >> ../out/fa-blend/$(BLEND)-output.txt; \
+			done; \
+		done; \
+	done;
+	@../bin/$(BLEND) $(HG38_FASTA) 21 11 32 7 yes
 
 ######################################################################
 # ERROR TOLERANCE EXPERIMENT
