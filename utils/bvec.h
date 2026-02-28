@@ -1,6 +1,10 @@
 #ifndef __BVEC_H__
 #define __BVEC_H__
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <stdio.h>
 
@@ -54,5 +58,9 @@
         free(bvec);                                                                             \
         bvec = NULL;                                                                            \
     }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

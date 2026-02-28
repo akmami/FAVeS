@@ -15,5 +15,9 @@ consensus.bed
 consensus_snps.bed
 
 analyses/script.*
+analyses/slurm.sh
+analyses/faves-config.sh
+analyses/faves.out.*
+analyses/faves.err.*
 analyses/blend_fuzzy_seeds.h
 analyses/blend_test.c

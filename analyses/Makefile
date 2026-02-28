@@ -103,18 +103,25 @@ faBlend: check_fasta mkdir_bin mkdir_out blend
 	@mv $(BLEND) $(EXECUTABLE_DIR)
 	@mkdir -p ../out/fa-blend
 	@echo "Output -> ../out/fa-blend/$(BLEND)-output.txt"
+	@rm -f ../out/fa-blend/$(BLEND)-output.txt ../out/fa-blend/tmp.$(BLEND).*.log
 	@date > ../out/fa-blend/$(BLEND)-output.txt
-	@echo "" >> ../out/fa-blend/$(BLEND)-output.txt
-	@for params in "21 11" "15 10"; do \
-		for third in 32 38 42; do \
-			for fourth in 5 7; do \
-				set -- $$params; \
-				../bin/$(BLEND) $(HG38_FASTA) $$1 $$2 $$third $$fourth >> ../out/fa-blend/$(BLEND)-output.txt 2>&1; \
-				echo "" >> ../out/fa-blend/$(BLEND)-output.txt; \
-			done; \
-		done; \
-	done;
+	@printf "%s\n" \
+		"21 11 32 5" "21 11 32 7" "21 11 38 5" "21 11 38 7" "21 11 42 5" "21 11 42 7" \
+		"15 10 32 5" "15 10 32 7" "15 10 38 5" "15 10 38 7" "15 10 42 5" "15 10 42 7" \
+	| xargs -n 4 -P $$(nproc) bash -c '\
+		a=$$1; b=$$2; c=$$3; d=$$4; \
+		f="../out/fa-blend/tmp.$(BLEND).$${a}.$${b}.$${c}.$${d}.log"; \
+		{ \
+		  /bin/time -v ../bin/$(BLEND) $(HG38_FASTA) $$a $$b $$c $$d; \
+		  echo; \
+		} >"$$f" 2>&1 \
+	' _ 
+	@cat ../out/fa-blend/tmp.$(BLEND).*.log >> ../out/fa-blend/$(BLEND)-output.txt
+	@rm -f ../out/fa-blend/tmp.$(BLEND).*.log
 	@../bin/$(BLEND) $(HG38_FASTA) 21 11 32 7 yes
+	@mkdir -p ../out/fa-blend-span
+	@mv ../out/relaxed_span_*.bed ../out/fa-blend-span
+	@date >> ../out/fa-blend/$(BLEND)-output.txt
 
 ######################################################################
 # ERROR TOLERANCE EXPERIMENT
