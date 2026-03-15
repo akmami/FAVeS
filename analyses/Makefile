@@ -104,24 +104,27 @@ faBlend: check_fasta mkdir_bin mkdir_out blend
 	@mkdir -p ../out/fa-blend
 	@echo "Output -> ../out/fa-blend/$(BLEND)-output.txt"
 	@rm -f ../out/fa-blend/$(BLEND)-output.txt ../out/fa-blend/tmp.$(BLEND).*.log
-	@date > ../out/fa-blend/$(BLEND)-output.txt
+	@echo "[" > ../out/fa-blend/$(BLEND)-output.txt
 	@printf "%s\n" \
-		"21 11 32 5" "21 11 32 7" "21 11 38 5" "21 11 38 7" "21 11 42 5" "21 11 42 7" \
-		"15 10 32 5" "15 10 32 7" "15 10 38 5" "15 10 38 7" "15 10 42 5" "15 10 42 7" \
+		"21 11 32 3" "21 11 32 5" "21 11 32 7" \
+		"21 11 37 3" "21 11 37 5" "21 11 37 7" \
+		"21 11 42 3" "21 11 42 5" "21 11 42 7" \
+		"15 10 32 3" "15 10 32 5" "15 10 32 7" \
+		"15 10 37 3" "15 10 37 5" "15 10 37 7" \
+		"15 10 42 3" "15 10 42 5" "15 10 42 7" \
 	| xargs -n 4 -P $$(nproc) bash -c '\
 		a=$$1; b=$$2; c=$$3; d=$$4; \
 		f="../out/fa-blend/tmp.$(BLEND).$${a}.$${b}.$${c}.$${d}.log"; \
 		{ \
-		  /bin/time -v ../bin/$(BLEND) $(HG38_FASTA) $$a $$b $$c $$d; \
-		  echo; \
+		  ../bin/$(BLEND) $(HG38_FASTA) $$a $$b $$c $$d; \
 		} >"$$f" 2>&1 \
 	' _ 
 	@cat ../out/fa-blend/tmp.$(BLEND).*.log >> ../out/fa-blend/$(BLEND)-output.txt
+	@echo "]" >> ../out/fa-blend/$(BLEND)-output.txt
 	@rm -f ../out/fa-blend/tmp.$(BLEND).*.log
-	@../bin/$(BLEND) $(HG38_FASTA) 21 11 32 7 yes
-	@mkdir -p ../out/fa-blend-span
-	@mv ../out/relaxed_span_*.bed ../out/fa-blend-span
-	@date >> ../out/fa-blend/$(BLEND)-output.txt
+# 	@../bin/$(BLEND) $(HG38_FASTA) 21 11 32 7 yes
+# 	@mkdir -p ../out/fa-blend-span
+# 	@mv ../out/relaxed_span_*.bed ../out/fa-blend-span
 
 ######################################################################
 # ERROR TOLERANCE EXPERIMENT
@@ -133,26 +136,23 @@ errSim: mkdir_bin mkdir_out blend
 	@mv $(SIMULATE) $(EXECUTABLE_DIR)
 	@mkdir -p ../out/err-sim
 	@mkdir -p ../data/sim
-	@rm -rf ../data/sim/*
 	@echo "Output -> ../out/err-sim/$(SIMULATE)-output.txt"
-	@date > $(OUT_DIR)/err-sim/$(SIMULATE)-output.txt
-	@echo "" >> ../out/err-sim/$(SIMULATE)-output.txt
-
-	$(TIME) ../bin/$(SIMULATE) -g -d ../data/sim >> ../out/err-sim/$(SIMULATE)-output.txt 2>&1
-	@echo "" >> ../out/err-sim/$(SIMULATE)-output.txt
-
-	$(TIME) ../bin/$(SIMULATE) -a --blend --short -d ../data/sim >> ../out/err-sim/$(SIMULATE)-output.txt 2>&1
-	@echo "" >> ../out/err-sim/$(SIMULATE)-output.txt
-	$(TIME) ../bin/$(SIMULATE) -a --blend -k 21 -w 11 -b 38 -d ../data/sim >> ../out/err-sim/$(SIMULATE)-output.txt 2>&1
-	@echo "" >> ../out/err-sim/$(SIMULATE)-output.txt
-	
-	$(TIME) ../bin/$(SIMULATE) -a --blend --hifi -b 32 -d ../data/sim >> ../out/err-sim/$(SIMULATE)-output.txt 2>&1
-	@echo "" >> ../out/err-sim/$(SIMULATE)-output.txt
-	$(TIME) ../bin/$(SIMULATE) -a --blend --hifi -d ../data/sim >> ../out/err-sim/$(SIMULATE)-output.txt 2>&1
-	@echo "" >> ../out/err-sim/$(SIMULATE)-output.txt
-
-	$(TIME) ../bin/$(SIMULATE) -a --blend -k 15 -w 10 -b 32 -d ../data/sim >> ../out/err-sim/$(SIMULATE)-output.txt 2>&1
-	@echo "" >> ../out/err-sim/$(SIMULATE)-output.txt
-	$(TIME) ../bin/$(SIMULATE) -a --blend -k 15 -w 10 -b 38 -d ../data/sim >> ../out/err-sim/$(SIMULATE)-output.txt 2>&1
-	@echo "" >> ../out/err-sim/$(SIMULATE)-output.txt
-	
+	@rm -f ../out/err-sim/$(SIMULATE)-output.txt ../out/err-sim/tmp.$(SIMULATE).*.log
+	@echo "[" > ../out/err-sim/$(SIMULATE)-output.txt
+	@printf "%s\n" \
+		"21 11 32 3" "21 11 32 5" "21 11 32 7" \
+		"21 11 37 3" "21 11 37 5" "21 11 37 7" \
+		"21 11 42 3" "21 11 42 5" "21 11 42 7" \
+		"15 10 32 3" "15 10 32 5" "15 10 32 7" \
+		"15 10 37 3" "15 10 37 5" "15 10 37 7" \
+		"15 10 42 3" "15 10 42 5" "15 10 42 7" \
+	| xargs -n 4 -P $$(nproc) bash -c '\
+		a=$$1; b=$$2; c=$$3; d=$$4; \
+		f="../out/err-sim/tmp.$(SIMULATE).$${a}.$${b}.$${c}.$${d}.log"; \
+		{ \
+		  ../bin/$(SIMULATE) $$a $$b $$c $$d; \
+		} >"$$f" 2>&1 \
+	' _ 
+	@cat ../out/err-sim/tmp.$(SIMULATE).*.log >> ../out/err-sim/$(SIMULATE)-output.txt
+	@echo "]" >> ../out/err-sim/$(SIMULATE)-output.txt
+	@rm -f ../out/err-sim/tmp.$(SIMULATE).*.log

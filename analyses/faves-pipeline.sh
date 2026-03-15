@@ -1,14 +1,20 @@
-: "${RUN_FVS:=true}"
-: "${RUN_MM2:=true}"
-: "${RUN_E2I:=true}"
+RUN_FVS="true"
+RUN_MM2="true"
+RUN_GTK="true"
+RUN_E2I="true"
 
-tmp_dir="${tmp_dir:-}"
-ref_dir="${ref_dir:-}"
+tmp_dir=.
+ref_dir=.
 
-hg38_prefix="${hg38_prefix:-}"
-hg38_chr22_prefix="${hg38_chr22_prefix:-}"
-hg002_prefix="${hg002_prefix:-}"
-hg002_chr22_prefix="${hg002_chr22_prefix:-}"
+hg38_prefix="hg38_prefix"
+hg38_chr22_prefix="hg38_chr22_prefix"
+hg002_prefix="hg002_prefix"
+hg002_chr22_prefix="hg002_chr22_prefix"
+hg002_reads="HG002.fastq.gz"
+hg002_chr22_reads="HG002.chr22.fastq.gz"
+
+hg002_gold="HG002_GRCh38_1_22_v4.2.1_benchmark.bed"
+hg002_chr22_gold="HG002_GRCh38_22_v4.2.1_benchmark.bed"
 
 CONFIG_FILE="faves-config.sh"
 
@@ -20,6 +26,30 @@ fi
 
 # -----------------------------------------
 # -----------------------------------------
+# Evaluation Callers
+# -----------------------------------------
+# -----------------------------------------
+snp_eval () {
+    local message=$1
+    local calls=$2
+    local gold=$3
+
+    local TP=$(bedtools intersect -a "$calls" -b "$gold" -wa -u | wc -l)
+    local FP=$(bedtools intersect -a "$calls" -b "$gold" -v | wc -l)
+    local FN=$(bedtools intersect -a "$gold" -b "$calls" -v | wc -l)
+
+    local PREC=$(echo "$TP / ($TP + $FP)" | bc -l)
+    local REC=$(echo "$TP / ($TP + $FN)" | bc -l)
+    local F1=$(echo "2 * $PREC * $REC / ($PREC + $REC)" | bc -l)
+
+    echo $message
+    echo "TP=$TP FP=$FP FN=$FN"
+    echo "Precision=$PREC Recall=$REC F1=$F1"
+    echo ""
+}
+
+# -----------------------------------------
+# -----------------------------------------
 # SNP Callers
 # -----------------------------------------
 # -----------------------------------------
@@ -28,11 +58,13 @@ faves_pipeline() {
     local sample_prefix=$2
     local fastq=$3
 
+    echo "Running FAVeS ..."
+
     /bin/time -v faves \
         -f $ref_dir/$ref_prefix.fasta \
         -q $fastq \
         -t 64 \
-        -o $tmp_dir/$sample_prefix.faves.bed \
+        -o $tmp_dir/$sample_prefix.faves.snps.bed \
         -p -v
 }
 
@@ -40,6 +72,18 @@ minimap2_pipeline() {
     local ref_prefix=$1
     local sample_prefix=$2
     local fastq=$3
+
+    echo "Running minimap2 ..."
+
+    if [ ! -f "$ref_dir/$ref_prefix.fasta" ]; then
+        echo "Missing fasta $ref_dir/$ref_prefix.fasta"
+        return
+    fi
+
+    if [ ! -f "$fastq" ]; then
+        echo "Missing reads $fastq"
+        return
+    fi
 
     /bin/time -v minimap2 \
         -ax sr \
@@ -53,6 +97,23 @@ minimap2_pipeline() {
     rm -f $tmp_dir/$sample_prefix.mm2.sam
 
     /bin/time -v samtools index $tmp_dir/$sample_prefix.mm2.bam
+}
+
+gatk_pipeline() {
+    local ref_prefix=$1
+    local sample_prefix=$2
+
+    echo "Running GATK ..."
+
+    if [ ! -f "$ref_dir/$ref_prefix.fasta" ]; then
+        echo "Missing fasta $ref_dir/$ref_prefix.fasta"
+        return
+    fi
+
+    if [ ! -f "$tmp_dir/$sample_prefix.mm2.bam" ]; then
+        echo "Missing bam $tmp_dir/$sample_prefix.mm2.bam"
+        return
+    fi
 
     if [ ! -f  "~/data/reference/$ref_prefix.dict" ]; then 
         gatk CreateSequenceDictionary -R $ref_dir/$ref_prefix.fasta -O $ref_dir/$ref_prefix.dict
@@ -61,18 +122,22 @@ minimap2_pipeline() {
     /bin/time -v gatk --java-options "-Xmx16g" HaplotypeCaller \
         --reference $ref_dir/$ref_prefix.fasta \
         --input $tmp_dir/$sample_prefix.mm2.bam \
-        --output $tmp_dir/$sample_prefix.mm2.vcf.gz \
+        --output $tmp_dir/$sample_prefix.mm2.gatk.vcf.gz \
         --QUIET true \
         --native-pair-hmm-threads 64
     
     /bin/time -v gatk SelectVariants \
         -R $ref_dir/$ref_prefix.fasta \
-        -V $tmp_dir/$sample_prefix.mm2.vcf.gz \
+        -V $tmp_dir/$sample_prefix.mm2.gatk.vcf.gz \
         --select-type-to-include SNP \
-        -O $tmp_dir/$sample_prefix.mm2.snps.vcf
+        -O $tmp_dir/$sample_prefix.mm2.gatk.snps.vcf
 
-    bcftools query -f '%CHROM\t%POS\t%ID\t%REF\t%ALT\n' $tmp_dir/$sample_prefix.mm2.snps.vcf | \
-        awk 'BEGIN{OFS="\t"}{start=$2-1; end=start+length($4); print $1,start,end,$3,$4,$5}' > $tmp_dir/$sample_prefix.mm2.snps.bed
+    bcftools query -f '%CHROM\t%POS\t%ID\t%REF\t%ALT\n' $tmp_dir/$sample_prefix.mm2.gatk.snps.vcf | \
+        awk 'BEGIN{OFS="\t"}{start=$2-1; end=start+length($4); print $1,start,end,$3,$4,$5}' > $tmp_dir/$sample_prefix.mm2.gatk.snps.bed
+    
+    rm -f $ref_dir/$ref_prefix.dict
+    rm -f $tmp_dir/$sample_prefix.mm2.gatk.vcf.gz
+    rm -f $tmp_dir/$sample_prefix.mm2.gatk.snps.vcf
 }
 
 ebwt2InDel_pipeline() {
@@ -80,11 +145,18 @@ ebwt2InDel_pipeline() {
     local sample_prefix=$2
     local fasta=$3
 
+    echo "Running ebwt2InDel ..."
+
+    if [ ! -f "$fasta" ]; then
+        echo "Missing reads $fasta"
+        return
+    fi
+
     /bin/time -v BCR\_LCP\_GSA $fasta $tmp_dir/$sample_prefix.ebwt2InDel.bwt 1024
 
     /bin/time -v ebwt2InDel -1 $tmp_dir/$sample_prefix.ebwt2InDel.bwt -o $tmp_dir/$sample_prefix.ebwt2InDel.snp
 
-    filter_snp $tmp_dir/$sample_prefix.ebwt2InDel.snp 5 >  $tmp_dir/$sample_prefix.ebwt2InDel.5.snp
+    filter_snp $tmp_dir/$sample_prefix.ebwt2InDel.snp 5 > $tmp_dir/$sample_prefix.ebwt2InDel.5.snp
 }
 
 source ~/.bashrc
@@ -97,10 +169,12 @@ conda activate gatk
 # -----------------------------------------
 if [ "$RUN_FVS" = "true" ]; then
     # CHROMOSOME 22
-    faves_pipeline $hg38_chr22_prefix $hg002_chr22_prefix ~/data/hg002/Illumina/HG002.GRCh38.chr22.2x250.fastq.gz
+    faves_pipeline $hg38_chr22_prefix $hg002_chr22_prefix $hg002_chr22_reads
+    snp_eval "GATK vs Gold - chr22" "$tmp_dir/$hg002_chr22_prefix.faves.snps.bed" "$hg002_chr22_gold"
 
     # WGA
-    faves_pipeline $hg38_prefix $hg002_prefix ~/data/hg002/Illumina/HG002.GRCh38.2x250.fastq.gz
+    faves_pipeline $hg38_prefix $hg002_prefix $hg002_reads
+    snp_eval "GATK vs Gold" "$tmp_dir/$hg002_prefix.faves.snps.bed" "$hg002_gold"
 fi
 
 # -----------------------------------------
@@ -110,10 +184,25 @@ fi
 # -----------------------------------------
 if [ "$RUN_MM2" = "true" ]; then
     # CHROMOSOME 22
-    minimap2_pipeline $hg38_chr22_prefix $hg002_chr22_prefix ~/data/hg002/Illumina/HG002.GRCh38.chr22.2x250.fastq.gz
+    minimap2_pipeline $hg38_chr22_prefix $hg002_chr22_prefix $hg002_chr22_reads
 
     # WGA
-    minimap2_pipeline $hg38_prefix $hg002_prefix ~/data/hg002/Illumina/HG002.GRCh38.2x250.fastq.gz
+    minimap2_pipeline $hg38_prefix $hg002_prefix $hg002_reads
+fi
+
+# -----------------------------------------
+# -----------------------------------------
+# GATK
+# -----------------------------------------
+# -----------------------------------------
+if [ "$RUN_GTK" = "true" ]; then
+    # CHROMOSOME 22
+    gatk_pipeline $hg38_chr22_prefix $hg002_chr22_prefix
+    snp_eval "GATK vs Gold - chr22" "$tmp_dir/$hg002_chr22_prefix.mm2.gatk.snps.bed" "$hg002_chr22_gold"
+
+    # WGA
+    gatk_pipeline $hg38_prefix $hg002_prefix
+    snp_eval "GATK vs Gold" "$tmp_dir/$hg002_prefix.mm2.gatk.snps.bed" "$hg002_gold"
 fi
 
 # -----------------------------------------
@@ -123,10 +212,12 @@ fi
 # -----------------------------------------
 if [ "$RUN_E2I" = "true" ]; then
     # CHROMOSOME 22
-    ebwt2InDel_pipeline $hg38_chr22_prefix $hg002_chr22_prefix ~/data/hg002/Illumina/HG002.GRCh38.chr22.2x250.fastq.gz
+    ebwt2InDel_pipeline $hg38_chr22_prefix $hg002_chr22_prefix $hg002_chr22_reads
+    snp_eval "GATK vs Gold - chr22" "$tmp_dir/$hg002_chr22_prefix.ebwt2InDel.5.snps.bed" "$hg002_chr22_gold"
 
     # WGA
-    ebwt2InDel_pipeline $hg38_prefix $hg002_prefix ~/data/hg002/Illumina/HG002.GRCh38.2x250.fastq.gz
+    ebwt2InDel_pipeline $hg38_prefix $hg002_prefix $hg002_reads
+    snp_eval "GATK vs Gold" "$tmp_dir/$hg002_prefix.ebwt2InDel.5.snps.bed" "$hg002_gold"
 fi
 
 # conda cleanup

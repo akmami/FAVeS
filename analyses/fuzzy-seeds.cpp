@@ -444,58 +444,68 @@ int main(int argc, char **argv) {
 	}
 	chrs_free(g_info.chroms);
 
-	std::cout << std::endl;
-
 	std::setprecision(5);
 
+	std::cout << "{" << std::endl;
+
 	// Param Settings
-	std::cout << "k: " << kmer_size << ", w: " << window << ", b: " << blend_bits << ", n: " << n_number << std::endl;
-	std::cout << "fasta: " << argv[1] << std::endl;
+	std::cout << '\t' << "\"k\": " << kmer_size  << "," << std::endl;
+	std::cout << '\t' << "\"w\": " << window 	 << "," << std::endl;
+	std::cout << '\t' << "\"b\": " << blend_bits << "," << std::endl;
+	std::cout << '\t' << "\"n\": " << n_number 	 << "," << std::endl;
 
 	// Total Cores
-	std::cout << "Total \\# Cores: " << format_int(core_counts) << std::endl;
+	std::cout << '\t' << "\"total_seeds\": \"" << format_int(core_counts) << "\"," << std::endl;
 
 	// Contiguous Cores
-	std::cout << "Contiguous Cores: " << format_int(contiguous_counts) << std::endl;
+	std::cout << '\t' << "\"contig_seeds\": \"" << format_int(contiguous_counts) << "\"," << std::endl;
 
 	// Distinct Cores
-    std::cout << "Distinct Cores: " << format_int(distinct_cores.size()) << " - " << format_double((double)distinct_cores.size() / core_counts, 5) << std::endl;
+    std::cout << '\t' << "\"distinct_seeds\": \"" << format_int(distinct_cores.size()) << "\"," << std::endl;
+	std::cout << '\t' << "\"distinct_seeds_ratio\": " << format_double((double)distinct_cores.size() / core_counts * 100, 5) << "," << std::endl;
 
 	// Unique Cores
-    std::cout << "Unique Cores: " << format_int(count_once) << " - " << format_double((double)count_once / core_counts, 5) << std::endl;
+    std::cout << '\t' << "\"unique_seeds\": \"" << format_int(count_once) << "\"," << std::endl;
+	std::cout << '\t' << "\"unique_seeds_ratio\": " << format_double((double)count_once / core_counts, 5) << "," << std::endl;
 
 	// Genome Stats
-	std::cout << "Genome len: " << g_info.genome_len << 
-			", valid regions: " << g_info.valid_genome_len <<  
-			", N: " << g_info.genome_len - g_info.valid_genome_len << 
-			" - " << (double)(g_info.genome_len - g_info.valid_genome_len) / g_info.genome_len << " % " << std::endl;
+	std::cout << '\t' << "\"genome_len\": " << g_info.genome_len << "," << std::endl;
+	std::cout << '\t' << "\"valid_regions\": " << g_info.valid_genome_len << "," << std::endl;
+	std::cout << '\t' << "\"genome_gap\": " << g_info.genome_len - g_info.valid_genome_len << "," << std::endl;
+	std::cout << '\t' << "\"genome_gap_ratio\": " << (double)(g_info.genome_len - g_info.valid_genome_len) / g_info.genome_len * 100 << "," << std::endl;
 
 	// Relaxed Uniqueness Ratio
+	std::cout << '\t' << "\"details\": [" << std::endl;
 	for (int i = 0; i <= RELAXATION_SPAN; i++) {
-		std::cout << "Relaxed-Uniqueness (-" << i << ",+" << i << ") %: " << 
-			format_double(((double)seed_statistics[i].relaxed_unique_count) / ((double)core_counts), 5) << 
-			", span: " << ((double)seed_statistics[i].total_relaxed_span) / g_info.genome_len << 
-			", gap %: " << ((double)g_info.valid_genome_len - seed_statistics[i].total_relaxed_span) / g_info.genome_len << 
-			", gap #: " << seed_statistics[i].total_relaxed_gap_count << 
-			", gap mean: " << ((double)seed_statistics[i].total_relaxed_gap_span) / seed_statistics[i].total_relaxed_gap_count << 
-			", gap: " << seed_statistics[i].total_relaxed_gap.minimum << 
-			"-" << seed_statistics[i].total_relaxed_gap.maximum << std::endl;
+		std::cout << '\t' << '\t' << "{" << std::endl;
+		std::cout << '\t' << '\t' << '\t' << "\"unique_seed_ratio\": " << format_double(((double)seed_statistics[i].relaxed_unique_count) / ((double)core_counts), 5) << "," << std::endl;
+		std::cout << '\t' << '\t' << '\t' << "\"span_ratio\": " << ((double)seed_statistics[i].total_relaxed_span) / g_info.genome_len << "," << std::endl;
+		std::cout << '\t' << '\t' << '\t' << "\"gap_ratio\": " << ((double)g_info.valid_genome_len - seed_statistics[i].total_relaxed_span) / g_info.genome_len << "," << std::endl;
+		std::cout << '\t' << '\t' << '\t' << "\"gap_number\": " << seed_statistics[i].total_relaxed_gap_count << "," << std::endl;
+		std::cout << '\t' << '\t' << '\t' << "\"gap_mean\": " << ((double)seed_statistics[i].total_relaxed_gap_span) / seed_statistics[i].total_relaxed_gap_count<< std::endl;
+		if (i == RELAXATION_SPAN)
+			std::cout << '\t' << '\t' << "}" << std::endl;
+		else 
+			std::cout << '\t' << '\t' << "}," << std::endl;
 	}
+	std::cout << '\t' << "]," << std::endl;
 	
 	// Execution Time
-	std::cout << "Exec. Time (sec): " << format_double(((double)durations.count()) / 1000) << std::endl;
+	std::cout << '\t' << "\"time\": " << format_double(((double)durations.count()) / 1000) << "," << std::endl;
 
 	// Mean Core Length
-	std::cout << "Avg Length: " << format_double(mean(lengths)) << std::endl;
+	std::cout << '\t' << "\"avg_len\": " << format_double(mean(lengths)) << "," << std::endl;
 
 	// Std Dev of Lengths
-	std::cout << "StdDev Length: " << format_double(stdev(lengths)) << std::endl;
+	std::cout << '\t' << "\"std_dev_len\": " << format_double(stdev(lengths)) << "," << std::endl;
 
 	// Min/Max Core Length
-	std::cout << "Min/Max Length: " << format_int(length_gaps.minimum) << "/" << format_int(length_gaps.maximum) << std::endl;
+	std::cout << '\t' << "\"min_max_len\": \"" << format_int(length_gaps.minimum) << "/" << format_int(length_gaps.maximum) << "\"," << std::endl;
 
 	// Total Sizes
-	std::cout << "Total Size (GB): " << format_double(sizes / (1024.0 * 1024.0 * 1024.0)) << std::endl << std::endl;
+	std::cout << '\t' << "\"size\": " << format_double(sizes / (1024.0 * 1024.0 * 1024.0)) << std::endl;
+
+	std::cout << "}," << std::endl;
 
 	return 0;
 };
