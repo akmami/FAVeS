@@ -66,16 +66,15 @@ static inline void calc_blend_simd(__m256i *blend_count_lsb, __m256i *blend_coun
 static inline uint64_t calc_blend_rm_simd(__m256i *blend_count_lsb, __m256i *blend_count_msb, __m256i *vote_plus, __m256i *vote_minus, uint64_t new_val, uint64_t old_val, const int bits) {
 
     (*blend_count_lsb) = _mm256_adds_epi8((*blend_count_lsb), _mm256_blendv_epi8((*vote_plus), (*vote_minus), movemask_inverse(new_val & MASK_LS_32_BITS)));
-    uint64_t blend_value = (uint64_t)_mm256_movemask_epi8((*blend_count_lsb)) & MASK_LS_32_BITS;
-    
-    // Removal of the oldest item
     (*blend_count_lsb) = _mm256_adds_epi8((*blend_count_lsb), _mm256_blendv_epi8((*vote_minus), (*vote_plus), movemask_inverse(old_val & MASK_LS_32_BITS)));
+
+    uint64_t blend_value = (uint64_t)_mm256_movemask_epi8((*blend_count_lsb)) & MASK_LS_32_BITS;
 
     if(bits > 32) {
         (*blend_count_msb) = _mm256_adds_epi8((*blend_count_msb), _mm256_blendv_epi8((*vote_plus), (*vote_minus), movemask_inverse((new_val >> 32) & MASK_LS_32_BITS)));
-        blend_value |= ((uint64_t)_mm256_movemask_epi8((*blend_count_msb))) << 32;
-
         (*blend_count_msb) = _mm256_adds_epi8((*blend_count_msb), _mm256_blendv_epi8((*vote_minus), (*vote_plus), movemask_inverse((old_val >> 32) & MASK_LS_32_BITS)));
+
+        blend_value |= ((uint64_t)_mm256_movemask_epi8((*blend_count_msb))) << 32;
     }
     
     return blend_value;
