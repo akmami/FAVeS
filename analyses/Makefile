@@ -8,6 +8,7 @@ W_VALUES := 11 16 21 26 31 36 41 46 50
 # Programs
 # fa
 BLEND := fuzzy-seeds
+MINIMIZER := min-seeds
 SIMULATE := simulation
 
 # Directories
@@ -23,6 +24,7 @@ CXX := .cpp
 GXX := g++
 CXXFLAGS = -std=c++17 -O3 -Wall -Wextra -Wpedantic
 BLENDLIB = -L ../lib -lblend 
+MINIMIZERLIB = -L ../lib -lminimizer
 TIME := /usr/bin/time -v
 
 .PHONY: all %
@@ -59,6 +61,12 @@ blend:
 	gcc -O3 -mavx2 -msse4.1 -c ../sketch/blend.c -I blend
 	ar rcs ../lib/libblend.a blend.o
 	@rm -f blend.o
+
+minimizer: 
+	@mkdir -p ../lib
+	gcc -O3 -mavx2 -msse4.1 -c ../sketch/minimizer.c -I minimizer
+	ar rcs ../lib/libminimizer.a minimizer.o
+	@rm -f minimizer.o
 
 clean:
 	@if [ -d "$(OUT_DIR)" ]; then \
@@ -156,3 +164,29 @@ errSim: mkdir_bin mkdir_out blend
 	@cat ../out/err-sim/tmp.$(SIMULATE).*.log >> ../out/err-sim/$(SIMULATE)-output.txt
 	@echo "]" >> ../out/err-sim/$(SIMULATE)-output.txt
 	@rm -f ../out/err-sim/tmp.$(SIMULATE).*.log
+
+
+######################################################################
+# MINIMIZERS
+######################################################################
+faMin: check_fasta mkdir_bin mkdir_out minimizer
+	$(GXX) $(CXXFLAGS) -mavx2 -msse4.1 -c $(MINIMIZER)$(CXX)
+	$(GXX) $(CXXFLAGS) -o $(MINIMIZER) $(MINIMIZER).o $(MINIMIZERLIB)
+	@rm $(MINIMIZER).o
+	@mv $(MINIMIZER) $(EXECUTABLE_DIR)
+	@mkdir -p ../out/fa-minimizer
+	@echo "Output -> ../out/fa-minimizer/$(MINIMIZER)-output.txt"
+	@rm -f ../out/fa-minimizer/$(MINIMIZER)-output.txt ../out/fa-minimizer/tmp.$(MINIMIZER).*.log
+	@echo "[" > ../out/fa-minimizer/$(MINIMIZER)-output.txt
+	@printf "%s\n" \
+		"21 11" "15 10" \
+	| xargs -n 2 -P $$(nproc) bash -c '\
+		a=$$1; b=$$2; \
+		f="../out/fa-minimizer/tmp.$(MINIMIZER).$${a}.$${b}.log"; \
+		{ \
+		  ../bin/$(MINIMIZER) $(HG38_FASTA) $$a $$b; \
+		} >"$$f" 2>&1 \
+	' _ 
+	@cat ../out/fa-minimizer/tmp.$(MINIMIZER).*.log >> ../out/fa-minimizer/$(MINIMIZER)-output.txt
+	@echo "]" >> ../out/fa-minimizer/$(MINIMIZER)-output.txt
+	@rm -f ../out/fa-minimizer/tmp.$(MINIMIZER).*.log
