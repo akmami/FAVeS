@@ -175,6 +175,7 @@ faMin: check_fasta mkdir_bin mkdir_out minimizer
 	@rm $(MINIMIZER).o
 	@mv $(MINIMIZER) $(EXECUTABLE_DIR)
 	@mkdir -p ../out/fa-minimizer
+	@mkdir -p ../out/fa-minimizer-span
 	@echo "Output -> ../out/fa-minimizer/$(MINIMIZER)-output.txt"
 	@rm -f ../out/fa-minimizer/$(MINIMIZER)-output.txt ../out/fa-minimizer/tmp.$(MINIMIZER).*.log
 	@echo "[" > ../out/fa-minimizer/$(MINIMIZER)-output.txt
@@ -184,7 +185,7 @@ faMin: check_fasta mkdir_bin mkdir_out minimizer
 		a=$$1; b=$$2; \
 		f="../out/fa-minimizer/tmp.$(MINIMIZER).$${a}.$${b}.log"; \
 		{ \
-		  ../bin/$(MINIMIZER) $(HG38_FASTA) $$a $$b; \
+		  ../bin/$(MINIMIZER) $(HG38_FASTA) $$a $$b yes; \
 		} >"$$f" 2>&1 \
 	' _ 
 	@cat ../out/fa-minimizer/tmp.$(MINIMIZER).*.log >> ../out/fa-minimizer/$(MINIMIZER)-output.txt

@@ -59,12 +59,14 @@ faves_pipeline() {
     local fastq=$3
 
     echo "Running FAVeS ..."
+    
+    mkdir -p $tmp_dir/faves
 
     /bin/time -v faves \
         -f $ref_dir/$ref_prefix.fasta \
         -q $fastq \
         -t 64 \
-        -o $tmp_dir/$sample_prefix.faves.snps.bed \
+        -o $tmp_dir/faves/$sample_prefix.faves.snps.bed \
         -p -v
 }
 
@@ -119,25 +121,27 @@ gatk_pipeline() {
         gatk CreateSequenceDictionary -R $ref_dir/$ref_prefix.fasta -O $ref_dir/$ref_prefix.dict
     fi
 
+    mkdir -p $tmp_dir/faves
+
     /bin/time -v gatk --java-options "-Xmx16g" HaplotypeCaller \
         --reference $ref_dir/$ref_prefix.fasta \
         --input $tmp_dir/$sample_prefix.mm2.bam \
-        --output $tmp_dir/$sample_prefix.mm2.gatk.vcf.gz \
+        --output $tmp_dir/faves/$sample_prefix.mm2.gatk.vcf.gz \
         --QUIET true \
         --native-pair-hmm-threads 64
     
     /bin/time -v gatk SelectVariants \
         -R $ref_dir/$ref_prefix.fasta \
-        -V $tmp_dir/$sample_prefix.mm2.gatk.vcf.gz \
+        -V $tmp_dir/faves/$sample_prefix.mm2.gatk.vcf.gz \
         --select-type-to-include SNP \
-        -O $tmp_dir/$sample_prefix.mm2.gatk.snps.vcf
+        -O $tmp_dir/faves/$sample_prefix.mm2.gatk.snps.vcf
 
-    bcftools query -f '%CHROM\t%POS\t%ID\t%REF\t%ALT\n' $tmp_dir/$sample_prefix.mm2.gatk.snps.vcf | \
-        awk 'BEGIN{OFS="\t"}{start=$2-1; end=start+length($4); print $1,start,end,$3,$4,$5}' > $tmp_dir/$sample_prefix.mm2.gatk.snps.bed
+    bcftools query -f '%CHROM\t%POS\t%ID\t%REF\t%ALT\n' $tmp_dir/faves/$sample_prefix.mm2.gatk.snps.vcf | \
+        awk 'BEGIN{OFS="\t"}{start=$2-1; end=start+length($4); print $1,start,end,$3,$4,$5}' > $tmp_dir/faves/$sample_prefix.mm2.gatk.snps.bed
     
     rm -f $ref_dir/$ref_prefix.dict
-    rm -f $tmp_dir/$sample_prefix.mm2.gatk.vcf.gz
-    rm -f $tmp_dir/$sample_prefix.mm2.gatk.snps.vcf
+    rm -f $tmp_dir/faves/$sample_prefix.mm2.gatk.vcf.gz
+    rm -f $tmp_dir/faves/$sample_prefix.mm2.gatk.snps.vcf
 }
 
 ebwt2InDel_pipeline() {
@@ -152,11 +156,13 @@ ebwt2InDel_pipeline() {
         return
     fi
 
+    mkdir -p $tmp_dir/faves
+
     /bin/time -v BCR\_LCP\_GSA $fasta $tmp_dir/$sample_prefix.ebwt2InDel.bwt 1024
 
-    /bin/time -v ebwt2InDel -1 $tmp_dir/$sample_prefix.ebwt2InDel.bwt -o $tmp_dir/$sample_prefix.ebwt2InDel.snp
+    /bin/time -v ebwt2InDel -1 $tmp_dir/$sample_prefix.ebwt2InDel.bwt -o $tmp_dir/faves/$sample_prefix.ebwt2InDel.snp
 
-    filter_snp $tmp_dir/$sample_prefix.ebwt2InDel.snp 5 > $tmp_dir/$sample_prefix.ebwt2InDel.5.snp
+    filter_snp $tmp_dir/faves/$sample_prefix.ebwt2InDel.snp 5 > $tmp_dir/faves/$sample_prefix.ebwt2InDel.5.snp
 }
 
 source ~/.bashrc

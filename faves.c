@@ -24,6 +24,51 @@ BVEC_INIT(uint64, uint64_t)
     mismatch_count += alignment_mismatches; \
 }
 
+#define align(seqs, seq1_seed, seq, seq_len, seq2_seed, mismatch_count) { \
+    /* uint64_t seq1_kmer = __sketch_get_kmer(seq1_seed); */ \
+    int seq1_strand = __sketch_get_strand(seq1_seed); \
+    int seq2_strand = __sketch_get_strand(seq2_seed); \
+    /* align and report variants in alignment */ \
+    if (seq1_strand == 0 && seq2_strand == 0) { \
+        uint64_t seq1_index = __sketch_get_index(seq1_seed); \
+        uint64_t seq1_id    = __sketch_get_reference_id(seq1_seed); \
+        uint64_t seq2_span  = __sketch_get_length(seq2_seed); \
+        uint64_t seq2_index = __sketch_get_index(seq2_seed); \
+        /* get substrings */ \
+        const char *seq1    = seqs[seq1_id].chrom + seq1_index - (seq2_index); \
+        const char *seq2    = seq; \
+        int alignment_mismatches = banded_align_and_report(seq1, seq2_span, seq2, seq2_span, seq2_strand, seq1_index - (seq2_index), seq1_id, variants); \
+        mismatch_count += alignment_mismatches; \
+    } else if (seq1_strand == 0 && seq2_strand == 1) { \
+        uint64_t seq1_index = __sketch_get_index(seq1_seed); \
+        uint64_t seq1_id    = __sketch_get_reference_id(seq1_seed); \
+        uint64_t seq2_span  = __sketch_get_length(seq2_seed); \
+        uint64_t seq2_index = __sketch_get_index(seq2_seed); \
+        const char *seq1    = seqs[seq1_id].chrom + seq1_index - (seq_len - seq2_index - seq2_span); \
+        const char *seq2    = seq; \
+        int alignment_mismatches = banded_align_and_report(seq1, seq2_span, seq2, seq2_span, seq2_strand, seq1_index - (seq_len - seq2_index - seq2_span), seq1_id, variants); \
+        mismatch_count += alignment_mismatches; \
+    } else if (seq1_strand == 1 && seq2_strand == 0) { \
+        uint64_t seq1_index = __sketch_get_index(seq1_seed); \
+        uint64_t seq1_id    = __sketch_get_reference_id(seq1_seed); \
+        uint64_t seq2_span  = __sketch_get_length(seq2_seed); \
+        uint64_t seq2_index = __sketch_get_index(seq2_seed); \
+        const char *seq1    = seqs[seq1_id].chrom + seq1_index - (seq2_index); \
+        const char *seq2    = seq; \
+        int alignment_mismatches = banded_align_and_report(seq1, seq2_span, seq2, seq2_span, seq2_strand, seq1_index - (seq2_index), seq1_id, variants); \
+        mismatch_count += alignment_mismatches; \
+    } else { \
+        uint64_t seq1_index = __sketch_get_index(seq1_seed); \
+        uint64_t seq1_id    = __sketch_get_reference_id(seq1_seed); \
+        uint64_t seq2_span  = __sketch_get_length(seq2_seed); \
+        uint64_t seq2_index = __sketch_get_index(seq2_seed); \
+        const char *seq1    = seqs[seq1_id].chrom + seq1_index - (seq_len - seq2_index - seq2_span); \
+        const char *seq2    = seq; \
+        int alignment_mismatches = banded_align_and_report(seq1, seq2_span, seq2, seq2_span, seq2_strand, seq1_index - (seq_len - seq2_index - seq2_span), seq1_id, variants); \
+        mismatch_count += alignment_mismatches; \
+    } \
+}
+
 #define pack_id(x, y) ((((x) & 0xFFFFFFFF) | ((y) << 32)))
 #define unpack_ref(x) ((uint32_t)((x) & 0xFFFFFFFF))
 #define unpack_read(x) ((uint32_t)((x) >> 32))
@@ -75,7 +120,7 @@ void process_fasta(params_t *p, uint128_t **seeds, uint64_t *seeds_len, map32_t 
 
         uint128_t *chr_seeds;
         uint64_t chr_seeds_len = 0;
-        chr_seeds_len = blend_sb_sketch(bases, len, p->w, p->k, p->blend_bits, p->n_neighbors, chrom_index, &chr_seeds);
+        chr_seeds_len = sketch_blend(bases, len, p->w, p->k, p->blend_bits, p->n_neighbors, chrom_index, &chr_seeds);
         
         if (chr_seeds_len) {
             if (all_seeds_cap <= all_seeds_len + chr_seeds_len) {
@@ -410,10 +455,7 @@ void *worker_process_record(void *arg) {
 
             uint128_t *temp_seeds;
             uint64_t temp_seeds_len = 0;
-            temp_seeds_len = blend_sb_sketch(bases, len, w, k, blend_bits, n_neighbors, 0, &temp_seeds);
-            
-            int last_read_anchor_idx = -1;
-            int last_ref_anchor_idx = -1;
+            temp_seeds_len = sketch_blend(bases, len, w, k, blend_bits, n_neighbors, 0, &temp_seeds);
 
             uint64_clear(ids);
             
@@ -439,37 +481,7 @@ void *worker_process_record(void *arg) {
                 uint32_t ref_anchor_idx = unpack_ref(ids->array[unique_ids_index]);
                 uint32_t read_anchor_idx = unpack_read(ids->array[unique_ids_index]);
 
-                uint32_t i = 0;
-
-                for (int seed_iter_index = read_anchor_idx; i <= ref_anchor_idx && last_read_anchor_idx < seed_iter_index; seed_iter_index--) {
-                    align_seeds(seqs, seeds[ref_anchor_idx-i], bases, temp_seeds[seed_iter_index], mismatch_count)
-                    neighbour_count++;
-                    i++;
-                }
-                neighbour_count--;
-
-                last_ref_anchor_idx = ref_anchor_idx;
-                last_read_anchor_idx = read_anchor_idx;
-
-                if (unique_ids_index + 1 < ids->size) {
-                    for (int seed_iter_index = read_anchor_idx + 1; i <= ref_anchor_idx && seed_iter_index < (int)unpack_read(ids->array[unique_ids_index+1]); seed_iter_index++) {
-                        align_seeds(seqs, seeds[ref_anchor_idx-i], bases, temp_seeds[seed_iter_index], mismatch_count)
-                        neighbour_count++;
-                        i++;
-                    }
-                    neighbour_count--;
-                }
-            }
-
-            if (last_read_anchor_idx != -1) {
-                last_ref_anchor_idx++;
-                last_read_anchor_idx++;
-
-                while ((uint64_t)last_read_anchor_idx < temp_seeds_len) {
-                    align_seeds(seqs, seeds[last_ref_anchor_idx], bases, temp_seeds[last_read_anchor_idx], mismatch_count)                 
-                    last_read_anchor_idx++;
-                    last_ref_anchor_idx++;
-                }
+                align(seqs, seeds[ref_anchor_idx], bases, len, temp_seeds[read_anchor_idx], mismatch_count)
             }
 
             if (temp_seeds_len) free(temp_seeds);

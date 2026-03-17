@@ -123,7 +123,7 @@ static inline uint64_t calc_blend_rm_simd(__m256i *blend_count_lsb, __m256i *ble
     }                                                                                                               \
 
 
-uint64_t blend_sb_sketch(const char *str, int str_len, int window_size, int kmer_size, int blend_bits, uint64_t neighbor_window, uint32_t str_id, uint128_t **fuzzy_seeds) {
+uint64_t sketch_blend(const char *str, int str_len, int window_size, int kmer_size, int blend_bits, int neighbor_window, uint32_t str_id, uint128_t **fuzzy_seeds) {
     
     assert(str_len > 0 && (window_size > 0 && window_size + kmer_size < 8192) && (kmer_size > 0 && kmer_size <= 28) && (neighbor_window > 0 && neighbor_window + kmer_size < 8192) && (blend_bits <= 50));
     
@@ -143,8 +143,8 @@ uint64_t blend_sb_sketch(const char *str, int str_len, int window_size, int kmer
     uint64_t blend_value = 0;
     uint128_t *forward_blend_buffer = (uint128_t*)malloc(sizeof(uint128_t) * neighbor_window);  // the buffer that stores forward BLEND seeds (3 -> 5)
     uint128_t *reverse_blend_buffer = (uint128_t*)malloc(sizeof(uint128_t) * neighbor_window);  // the buffer that stores reverse BLEND seeds (5 -> 3) 
-    uint64_t forward_blend_buffer_pos = 0, reverse_blend_buffer_pos = 0;
-    uint64_t forward_neighbors_processed = 0, reverse_neighbors_processed = 0; // number of minimizers processed
+    int forward_blend_buffer_pos = 0, reverse_blend_buffer_pos = 0;
+    int forward_neighbors_processed = 0, reverse_neighbors_processed = 0; // number of minimizers processed
     
     // SSE4-related variables
     __m256i vote_plus = _mm256_set1_epi8(1);
@@ -291,11 +291,6 @@ uint64_t blend_sb_sketch(const char *str, int str_len, int window_size, int kmer
 
     return seed_count;
 }
-
-uint64_t blend_sketch(const char *str, int str_len, int window_size, int kmer_size, int blend_bits, int neighbor_window, uint32_t str_id, uint128_t **fuzzy_seeds) {
-	return blend_sb_sketch(str, str_len, window_size, kmer_size, blend_bits, (uint64_t)neighbor_window, str_id, fuzzy_seeds);
-}
-
 
 #ifdef __cplusplus
 }

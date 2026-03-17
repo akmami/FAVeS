@@ -19,7 +19,7 @@ extern "C" {
 #ifndef __UINT128_T__
 #define __UINT128_T__
 typedef struct {
-	uint64_t x; // kmer(50) + span(8)
+	uint64_t x; // kmer(56) + span(8)
 	uint64_t y; // reference_id(32) + index(31) + strand(1)
 } uint128_t;
 #endif

@@ -48,7 +48,7 @@ void sketch_blend_sequence(const char *seq, int len, params_t *p, sketch_t *sk) 
     uint128_t *fuzzy_seeds;
     uint64_t fuzzy_seeds_len = 0;
 
-    fuzzy_seeds_len = blend_sketch(seq, len, p->w, p->k, p->b, p->n, 0, &fuzzy_seeds);
+    fuzzy_seeds_len = sketch_blend(seq, len, p->w, p->k, p->b, p->n, 0, &fuzzy_seeds);
 
     sk->anchors = fuzzy_seeds;
     sk->count = fuzzy_seeds_len;
