@@ -34,9 +34,7 @@ typedef struct {
 typedef struct {
     uint64_t relaxed_unique_count;
     uint64_t total_relaxed_span;
-	uint64_t total_relaxed_gap_span; 
 	uint64_t total_relaxed_gap_count;
-	gap      total_relaxed_gap;
 } seed_stats_t;
 
 typedef struct {
@@ -131,47 +129,44 @@ void relaxed_uniqueness_paint(chr_info_t *info,
         uint8_t *relaxed = (uint8_t*)calloc(seeds_len, 1);
         if (!relaxed) abort();
 
-        for (uint64_t seed_index = 0; seed_index < seeds_len; seed_index++) {
-            if (!is_unique[seed_index]) continue;
-			
-            uint64_t left_index = i64_low(seed_index, radius);
-            uint64_t right_index = i64_high(seed_index, radius, seeds_len);
-
-            for (uint64_t relaxed_seed_index = left_index; relaxed_seed_index <= right_index; relaxed_seed_index++) {
-                relaxed[relaxed_seed_index] = 1;
-            }
-        }
-
-		// compute relaxed seeds count
 		uint64_t relaxed_seeds_len = 0;
+		uint64_t total_relaxed_span = 0;
+
         for (uint64_t seed_index = 0; seed_index < seeds_len; seed_index++) {
-            relaxed_seeds_len += relaxed[seed_index];
-        }
+            if (is_unique[seed_index]) {
+				uint64_t left_index = i64_low(seed_index, radius);
+				uint64_t right_index = i64_high(seed_index, radius, seeds_len);
+
+				for (uint64_t relaxed_seed_index = left_index; relaxed_seed_index <= right_index; relaxed_seed_index++) {
+					if (!relaxed[relaxed_seed_index]) {
+						relaxed[relaxed_seed_index] = 1;
+						relaxed_seeds_len++;
+					}
+				}
+			}
+		}
 
         // compute span of relaxed seeds
 		std::vector<std::pair<uint64_t,uint64_t>> intervals;
 		intervals.reserve(relaxed_seeds_len);
 
-		for (uint64_t seed_index= 0; seed_index < seeds_len; seed_index++) {
-			if (!relaxed[seed_index]) continue;
-			uint64_t s = __sketch_get_index(seeds[seed_index]);
-			uint64_t e = s + __sketch_get_length(seeds[seed_index]);
-			intervals.emplace_back(s, e);
+		for (uint64_t seed_index = 0; seed_index < seeds_len; seed_index++) {
+			if (relaxed[seed_index]) {
+				uint64_t s = __sketch_get_index(seeds[seed_index]);
+				uint64_t e = s + __sketch_get_length(seeds[seed_index]);
+				intervals.emplace_back(s, e);
+			}
 		}
 
 		std::sort(intervals.begin(), intervals.end());
 
-		uint64_t total_span = 0;
-
 		if (!intervals.empty()) {
-			std::vector<std::pair<uint64_t,uint64_t>> filled_blocks;
-            filled_blocks.reserve(intervals.size());
+			std::vector<std::pair<uint64_t,uint64_t>> collapsed_blocks;
+            collapsed_blocks.reserve(intervals.size());
 
 			uint64_t span_start = intervals[0].first;
 			uint64_t span_end   = intervals[0].second;
 
-			seed_statistics[radius].total_relaxed_gap_span += span_start;
-			set_min_max(seed_statistics[radius].total_relaxed_gap, span_start);
 			if (span_start) seed_statistics[radius].total_relaxed_gap_count++;
 
 			for (size_t k = 1; k < intervals.size(); k++) {
@@ -179,73 +174,36 @@ void relaxed_uniqueness_paint(chr_info_t *info,
 				if (inter.first <= span_end) {
 					span_end = std::max(span_end, inter.second);
 				} else {
-					filled_blocks.emplace_back(span_start, span_end);
-					total_span += span_end - span_start;
-					
-					uint64_t g = inter.first - span_end;
-					seed_statistics[radius].total_relaxed_gap_span += g;
+					collapsed_blocks.emplace_back(span_start, span_end);
+					total_relaxed_span += span_end - span_start;
 					seed_statistics[radius].total_relaxed_gap_count++;
-					set_min_max(seed_statistics[radius].total_relaxed_gap, g);
-					
+					// reset start and end
 					span_start = inter.first;
 					span_end   = inter.second;
 				}
 			}
 
-			filled_blocks.emplace_back(span_start, span_end);
-			total_span += span_end - span_start;
+			collapsed_blocks.emplace_back(span_start, span_end);
+			total_relaxed_span += span_end - span_start;
 
-			uint64_t tail_gap = (span_end < chr_length) ? (chr_length - span_end) : 0;
-			seed_statistics[radius].total_relaxed_gap_span += tail_gap;
 			if (span_end < chr_length) seed_statistics[radius].total_relaxed_gap_count++;
-			set_min_max(seed_statistics[radius].total_relaxed_gap, tail_gap);
 
 			if (print_bed) {
 				std::ostream &out = bed_out[radius];
-
-				uint64_t prev_end = 0;
-				uint64_t filled_i = 0;
-				uint64_t gap_i = 0;
-
-				for (const auto &blk : filled_blocks) {
-					const uint64_t s = blk.first;
-					const uint64_t e = blk.second;
-
-					// gap before block
-					if (s > prev_end) {
-						// "gap"
-						bed9_write(out, info->name, prev_end, s, "gap", "255,0,0");
-						gap_i++;
-					}
-
+				for (const auto &blk : collapsed_blocks) {
 					// "filled"
-					bed9_write(out, info->name, s, e, "filled", "0,0,255");
-					filled_i++;
-
-					prev_end = e;
-				}
-
-				// final gap
-				if (prev_end < chr_length) {
-					bed9_write(out, info->name, prev_end, chr_length, "gap", "255,0,0");
+					bed9_write(out, info->name, blk.first, blk.second, "filled", "0,0,255");
 				}
 			}
 		} else {
             // no relaxed hits => entire chromosome is a gap
-            std::ostream &out = bed_out[radius];
-			if (print_bed) {
-            	bed9_write(out, info->name, 0, chr_length, "gap", "255,0,0");
-			}
-
             // stats: all gap, no span
-			seed_statistics[radius].total_relaxed_gap_span += chr_length;
 			seed_statistics[radius].total_relaxed_gap_count++;
-			set_min_max(seed_statistics[radius].total_relaxed_gap, chr_length);
         }
 
 		// finalize stats
 		seed_statistics[radius].relaxed_unique_count += relaxed_seeds_len;
-		seed_statistics[radius].total_relaxed_span += total_span;
+		seed_statistics[radius].total_relaxed_span += total_relaxed_span;
         
 		// cleanup
 		free(relaxed);

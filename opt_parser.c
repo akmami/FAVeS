@@ -155,9 +155,9 @@ void parse_args(int argc, char **argv, params_t *p) {
 
     if (p->verbose) {
         fprintf(stderr,
-            "[%s:args] fa: %s\n"
-            "[%s:args] fq: %s\n"
-            "[%s:args] k: %d, w: %d, b: %d, n: %d, c: %d, t: %d\n",
+            "[%s::args] fa: %s\n"
+            "[%s::args] fq: %s\n"
+            "[%s::args] k: %d, w: %d, b: %d, n: %d, c: %d, t: %d\n",
             __TOOL_SHORT_NAME__, p->fasta, 
             __TOOL_SHORT_NAME__, p->fastq, 
             __TOOL_SHORT_NAME__, p->k, p->w, p->blend_bits, p->n_neighbors, p->min_consensus, p->n_threads

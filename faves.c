@@ -214,7 +214,7 @@ void process_fasta(params_t *p, uint128_t **seeds, uint64_t *seeds_len, map32_t 
     *seeds_len = all_seeds_len;
 
     if (p->verbose) {
-        fprintf(stderr, "[%s:ref] Processed (uniq #: %lu - %.2f%c, seed #: %lu, span avg: %.2f)\n", __TOOL_SHORT_NAME__, unique_seeds_len, (double)unique_seeds_len / (double)all_seeds_len, '%', all_seeds_len, total_unique_seed_span / unique_seeds_len);
+        fprintf(stderr, "[%s::ref] Processed (uniq #: %lu - %.2f%c, seed #: %lu, span avg: %.2f)\n", __TOOL_SHORT_NAME__, unique_seeds_len, (double)unique_seeds_len / (double)all_seeds_len, '%', all_seeds_len, total_unique_seed_span / unique_seeds_len);
     }
 }
 
@@ -279,7 +279,7 @@ void process_records(params_t *p, map32_t *index_table, uint128_t *seeds, uint64
         if (p->progress) {
             time_t now = time(NULL);
             if (now - last_print >= __DEFAULT_PROGRESS_INTERVAL__) {   // every 1 second
-                printf("\r[%s:live] Processed %ld records ...", __TOOL_SHORT_NAME__, read_count);
+                printf("\r[%s::live] Processed %ld records ...", __TOOL_SHORT_NAME__, read_count);
                 fflush(stdout);
                 last_print = now;
             }
@@ -316,7 +316,7 @@ void process_records(params_t *p, map32_t *index_table, uint128_t *seeds, uint64
     }
 
     if (p->verbose) {
-        fprintf(stderr, "[%s:time] elapsed: %02d:%02d:%02d (%.2f%c idle)\n", __TOOL_SHORT_NAME__, (int)((program_end - program_start) / 3600), (int)((program_end - program_start) / 60) % 3600, ((int)(program_end - program_start) % 60), total_exec_sec / (program_end - program_start), '%');
+        fprintf(stderr, "[%s::time] elapsed: %02d:%02d:%02d (%.2f%c idle)\n", __TOOL_SHORT_NAME__, (int)((program_end - program_start) / 3600), (int)((program_end - program_start) / 60) % 3600, ((int)(program_end - program_start) % 60), total_exec_sec / (program_end - program_start), '%');
     }
 
     // cleanup unnesesary indices
@@ -355,7 +355,7 @@ void process_records(params_t *p, map32_t *index_table, uint128_t *seeds, uint64
     }
 
     if (p->verbose) {
-        fprintf(stderr, "[%s:records] query: uniq %lu, non-uniq %lu, no-seed %lu | seed #: %lu, uniq #: %lu, mismatch #: %lu | radious #: %lu\n", __TOOL_SHORT_NAME__, stats.countains_unique, stats.only_non_unique, stats.no_seed, stats.total_seed_count, stats.total_uniq_count, stats.mismatch_count, stats.neighbour_count);
+        fprintf(stderr, "[%s::records] query: uniq %lu, non-uniq %lu, no-seed %lu | seed #: %lu, uniq #: %lu, mismatch #: %lu | radious #: %lu\n", __TOOL_SHORT_NAME__, stats.countains_unique, stats.only_non_unique, stats.no_seed, stats.total_seed_count, stats.total_uniq_count, stats.mismatch_count, stats.neighbour_count);
     }
 
     uint64_t total_consensus_var = 0;
@@ -414,7 +414,7 @@ void process_records(params_t *p, map32_t *index_table, uint128_t *seeds, uint64
     }
 
     if (p->verbose) {
-        fprintf(stderr, "[%s:records] read: var %lu, snp: %lu\n", __TOOL_SHORT_NAME__, total_var_size, total_consensus_var);
+        fprintf(stderr, "[%s::records] read: var %lu, snp: %lu\n", __TOOL_SHORT_NAME__, total_var_size, total_consensus_var);
     }
 }
 
@@ -467,7 +467,7 @@ void *worker_process_record(void *arg) {
                 uint64_t ref_anchor_idx = kh_val(index_table, k);
 
                 if (seeds_len <= ref_anchor_idx) {
-                    fprintf(stderr, "[%s:err] Weird stuff is ongoing.\n", __TOOL_SHORT_NAME__);
+                    fprintf(stderr, "[%s::err] Weird stuff is ongoing.\n", __TOOL_SHORT_NAME__);
                     abort();
                 }
 

@@ -217,9 +217,6 @@ int main(int argc, char **argv) {
 	// compute relaxations
 	seed_stats_t seed_statistics[RELAXATION_SPAN+1];
 	memset(seed_statistics, 0, sizeof(seed_stats_t) * (RELAXATION_SPAN + 1));
-	for (int i = 0; i <= RELAXATION_SPAN; i++) {
-		seed_statistics[i].total_relaxed_gap.minimum = UINT64_MAX;
-	}
 
 	{
 		uint64_t chr_size = g_info.chroms->size;
@@ -276,7 +273,8 @@ int main(int argc, char **argv) {
 		std::cout << '\t' << '\t' << '\t' << "\"span_ratio\": " << format_double(((double)seed_statistics[i].total_relaxed_span) / g_info.genome_len, 5) << "," << std::endl;
 		std::cout << '\t' << '\t' << '\t' << "\"gap_ratio\": " << format_double(((double)g_info.valid_genome_len - seed_statistics[i].total_relaxed_span) / g_info.genome_len, 5) << "," << std::endl;
 		std::cout << '\t' << '\t' << '\t' << "\"gap_number\": " << seed_statistics[i].total_relaxed_gap_count << "," << std::endl;
-		std::cout << '\t' << '\t' << '\t' << "\"gap_mean\": " << format_double(((double)seed_statistics[i].total_relaxed_gap_span) / seed_statistics[i].total_relaxed_gap_count, 5) << std::endl;
+		double total_relaxed_gap_span = g_info.genome_len - seed_statistics[i].total_relaxed_span;
+		std::cout << '\t' << '\t' << '\t' << "\"gap_mean\": " << format_double(total_relaxed_gap_span / seed_statistics[i].total_relaxed_gap_count, 5) << std::endl;
 		if (i == RELAXATION_SPAN)
 			std::cout << '\t' << '\t' << "}" << std::endl;
 		else 

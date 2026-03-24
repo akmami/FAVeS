@@ -164,5 +164,5 @@ plt.legend(
     fontsize=13
 )
 plt.tight_layout()
-plt.savefig("../out/gap_k21_w11.png", dpi=300)
+plt.savefig("../out/figures/blend_gap_k21_w11.png", dpi=300)
 plt.close()

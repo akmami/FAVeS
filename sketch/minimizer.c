@@ -2,12 +2,12 @@
 
 
 #define validate(type, array, size, capacity) { \
-	if (size == capacity) {                                               	\
-		capacity *= 2;                                                    	\
+	if (size == capacity) {                                          	\
+		capacity *= 2;                                                	\
 		type *temp = (type *)realloc(array, capacity * sizeof(type));	\
-		if (!temp) { free(array); return 0; }                              	\
-		array = temp;                                                    	\
-	} 																		\
+		if (!temp) { free(array); return 0; }                         	\
+		array = temp;                                                   \
+	} 																	\
 }
 
 static unsigned char seq_nt4_table[256] = {
@@ -55,9 +55,7 @@ uint64_t sketch_minimizers(const char *str, int len, int window, int kmer_size, 
 	assert(len > 0 && (window > 0 && window < 256) && (kmer_size > 0 && kmer_size <= 28)); 
 	memset(buf, 0xFF, window * 16);
 
-	kmer_len = 0;
-	buf_pos = 0;
-	min_pos = 0;
+	kmer_len = buf_pos = min_pos = 0;
 
 	uint64_t kmers_cap = 3 * len / window;
 	*minimizers = (uint128_t *)malloc(sizeof(uint128_t) * kmers_cap);
@@ -71,24 +69,33 @@ uint64_t sketch_minimizers(const char *str, int len, int window, int kmer_size, 
 
 		if (current_char < 4) { 
 			int strand;
-			kmer_span = kmer_len + 1 < kmer_size? kmer_len + 1 : kmer_size;
+			kmer_span = kmer_len + 1 < kmer_size ? kmer_len + 1 : kmer_size;
 			current_kmer[0] = (current_kmer[0] << 2 | current_char) & kmer_bit_mask;    // forward k-mer
-			current_kmer[1] = (current_kmer[1] >> 2) | (3ULL^current_char) << shift; 	// reverse k-mer
+			current_kmer[1] = (current_kmer[1] >> 2) | (3ULL ^ current_char) << shift; 
+			kmer_len++;	// reverse k-mer
 			if (only_symmetric && current_kmer[0] == current_kmer[1]) continue;
 			strand = current_kmer[0] < current_kmer[1] ? 0 : 1;
-			kmer_len++;
 			if (kmer_len >= kmer_size && kmer_span < 256) {
 				current_info.x = hash64(current_kmer[strand], kmer_bit_mask) << 8 | kmer_span;
-				current_info.y = (uint64_t)reference_id << 32 | (uint32_t)(char_index - kmer_len + 1) << 1 | strand;
+				current_info.y = (uint64_t)reference_id << 32 | (uint32_t)(char_index - kmer_size + 1) << 1 | strand;
 			}
 		} else {
-            if (min.x != UINT64_MAX) {
+			if (min.x != UINT64_MAX) {
 				validate(uint128_t, kmers, kmers_len, kmers_cap)
 				kmers[kmers_len++] = min;
 			}
-
 			kmer_len = 0, kmer_span = 0;
-            min = (uint128_t){ UINT64_MAX, UINT64_MAX };
+			min = (uint128_t){ UINT64_MAX, UINT64_MAX };
+			buf_pos = 0;
+
+			// consume the entire invalid run, INCLUDING the current base
+            while (char_index < len && seq_nt4_table[(uint8_t)str[char_index]] >= 4) {
+                char_index++;
+            }
+
+            // compensate for the for-loop's char_index++
+            char_index--;
+
 			continue;
 		}
 
@@ -96,15 +103,15 @@ uint64_t sketch_minimizers(const char *str, int len, int window, int kmer_size, 
 		
 		if (kmer_len == window + kmer_size - 1 && min.x != UINT64_MAX) { 
 			for (helper_index = buf_pos + 1; helper_index < window; ++helper_index) {
-				if (min.x == buf[helper_index].x && buf[helper_index].y != min.y) {
+				if (min.x == buf[helper_index].x && min.y != buf[helper_index].y) {
 					validate(uint128_t, kmers, kmers_len, kmers_cap)
 					kmers[kmers_len++] = buf[helper_index];
 				}
 			}
 			for (helper_index = 0; helper_index < buf_pos; ++helper_index) {
-				if (min.x == buf[helper_index].x && buf[helper_index].y != min.y) {
+				if (min.x == buf[helper_index].x && min.y != buf[helper_index].y) {
 					validate(uint128_t, kmers, kmers_len, kmers_cap)
-					kmers[kmers_len++] = min;
+					kmers[kmers_len++] = buf[helper_index];
 				}
 			}
 		}
@@ -122,14 +129,12 @@ uint64_t sketch_minimizers(const char *str, int len, int window, int kmer_size, 
 			}
 			for (helper_index = buf_pos + 1, min.x = UINT64_MAX; helper_index < window; ++helper_index) { 
 				if (min.x >= buf[helper_index].x) {
-					min = buf[helper_index];
-					min_pos = helper_index; 
+					min = buf[helper_index], min_pos = helper_index; 
 				}
 			}
 			for (helper_index = 0; helper_index <= buf_pos; ++helper_index) {
 				if (min.x >= buf[helper_index].x) {
-					min = buf[helper_index];
-					min_pos = helper_index;
+					min = buf[helper_index], min_pos = helper_index;
 				}
 			}
 			if (kmer_len >= window + kmer_size - 1 && min.x != UINT64_MAX) {
