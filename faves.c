@@ -24,6 +24,22 @@ BVEC_INIT(uint64, uint64_t)
     mismatch_count += alignment_mismatches; \
 }
 
+#define align_seeds_radius(seqs, seq1_seed_begin, seq1_seed_end, seq, seq2_seed_begin, seq2_seed_end, seq2_seed_strand, mismatch_count) { \
+    /* uint64_t seq1_kmer = __sketch_get_kmer(seq1_seed); */ \
+    uint64_t seq1_index = __sketch_get_index(seq1_seed_begin); \
+    uint64_t seq1_span  = __sketch_get_index(seq1_seed_end) + __sketch_get_length(seq1_seed_end) - seq1_index; \
+    uint64_t seq1_id    = __sketch_get_reference_id(seq1_seed_begin); \
+    /* int seq1_strand = __sketch_get_strand(seq1_seed); */ \
+    uint64_t seq2_index = __sketch_get_index(seq2_seed_begin); \
+    uint64_t seq2_span  = __sketch_get_index(seq2_seed_end) + __sketch_get_length(seq2_seed_end) - seq2_index; \
+    /* get substrings */ \
+    const char *seq1    = seqs[seq1_id].chrom + seq1_index; \
+    const char *seq2    = seq + seq2_index; \
+    /* align and report variants in alignment */ \
+    int alignment_mismatches = banded_align_and_report(seq1, seq1_span, seq2, seq2_span, seq2_seed_strand, seq1_index, seq1_id, variants); \
+    mismatch_count += alignment_mismatches; \
+}
+
 #define align(seqs, seq1_seed, seq, seq_len, seq2_seed, mismatch_count) { \
     /* uint64_t seq1_kmer = __sketch_get_kmer(seq1_seed); */ \
     int seq1_strand = __sketch_get_strand(seq1_seed); \
@@ -242,6 +258,7 @@ void process_records(params_t *p, map32_t *index_table, uint128_t *seeds, uint64
         ctx[i].p->w = p->w;
         ctx[i].p->blend_bits = p->blend_bits;
         ctx[i].p->n_neighbors = p->n_neighbors;
+        ctx[i].p->radius = p->radius;
         ctx[i].p->n_threads = p->n_threads;
         ctx[i].p->seqs = seqs;
         ctx[i].p->seeds = seeds;
@@ -426,6 +443,7 @@ void *worker_process_record(void *arg) {
     int k = ctx->p->k;
     int blend_bits = ctx->p->blend_bits;
     int n_neighbors = ctx->p->n_neighbors;
+    int radius = ctx->p->radius;
 
     ref_seq_t *seqs = ctx->p->seqs;
     uint128_t *seeds = (uint128_t *)ctx->p->seeds;
@@ -479,9 +497,45 @@ void *worker_process_record(void *arg) {
             for (uint32_t unique_ids_index = 0; unique_ids_index < ids->size; unique_ids_index++) {
 
                 uint32_t ref_anchor_idx = unpack_ref(ids->array[unique_ids_index]);
-                uint32_t read_anchor_idx = unpack_read(ids->array[unique_ids_index]);
+                uint32_t ref_anchor_idx_begin = ref_anchor_idx;
+                uint32_t ref_anchor_idx_end = ref_anchor_idx;
 
-                align(seqs, seeds[ref_anchor_idx], bases, len, temp_seeds[read_anchor_idx], mismatch_count)
+                uint32_t read_anchor_idx = unpack_read(ids->array[unique_ids_index]);
+                uint32_t read_anchor_idx_begin = read_anchor_idx;
+                uint32_t read_anchor_idx_end = read_anchor_idx;
+
+                // iterate to find span offsets
+                for (int r = 1; r <= radius; r++) {
+
+                    int can_expand_left = (ref_anchor_idx_begin > 0) && (read_anchor_idx_begin > 0);
+                    int can_expand_right = (ref_anchor_idx_end + 1 < seeds_len) && (read_anchor_idx_end + 1 < temp_seeds_len);
+
+                    // stop if neither direction expandable
+                    if (!can_expand_left && !can_expand_right)
+                        break;
+
+                    if (can_expand_left) {
+                        ref_anchor_idx_begin--;
+                        read_anchor_idx_begin--;
+                    }
+
+                    if (can_expand_right) {
+                        ref_anchor_idx_end++;
+                        read_anchor_idx_end++;
+                    }
+                }
+
+                // single alignment on spanned region
+                align_seeds_radius(
+                    seqs,
+                    seeds[ref_anchor_idx_begin],
+                    seeds[ref_anchor_idx_end],
+                    bases,
+                    temp_seeds[read_anchor_idx_begin],
+                    temp_seeds[read_anchor_idx_end],
+                    __blend_get_strand(temp_seeds[read_anchor_idx]),
+                    mismatch_count
+                );
             }
 
             if (temp_seeds_len) free(temp_seeds);

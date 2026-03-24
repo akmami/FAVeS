@@ -13,6 +13,7 @@
 #define __DEFAULT_BLEND_BITS__ 32
 #define __DEFAULT_BLEND_NEIGHBOR_NUMBER__ 7
 #define __DEFAULT_CONSENSUS_THRESHOLD__ 10
+#define __DEFAULT_RADIUS__ 5
 #define __DEFAULT_THREAD_NUMBER__ 4
 #define __DEFAULT_SKETCH_CAPACITY__ 40000000
 #define __DEFAULT_VARIANT_CAPACITY__ 10000000
@@ -68,6 +69,7 @@ typedef struct {
     int blend_bits;
     int n_neighbors;
     int min_consensus;
+    int radius;
     int n_threads;
     int progress;
     int verbose;
@@ -114,6 +116,7 @@ typedef struct {
     int w;
     int blend_bits;
     int n_neighbors;
+    int radius;
     int n_threads;
     ref_seq_t *seqs;
     void *seeds;

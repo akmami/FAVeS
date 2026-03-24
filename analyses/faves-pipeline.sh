@@ -6,14 +6,24 @@ RUN_E2I="true"
 tmp_dir=.
 ref_dir=.
 
-hg38_prefix="hg38_prefix"
-hg38_chr22_prefix="hg38_chr22_prefix"
-hg002_prefix="hg002_prefix"
-hg002_chr22_prefix="hg002_chr22_prefix"
-hg002_reads="HG002.fastq.gz"
-hg002_chr22_reads="HG002.chr22.fastq.gz"
+dm6_prefix="dm6"
+dm6_sim_prefix="dm6_prefix"
+dm6_sim_reads="dm6.fastq.gz"
+dm6_sim_gold="dm6.bed"
 
+ecoli_prefix="ecoli"
+ecoli_sim_prefix="ecoli_prefix"
+ecoli_sim_reads="ecoli.fastq.gz"
+ecoli_sim_gold="ecoli.bed"
+
+hg38_prefix="hg38_prefix"
+hg002_prefix="hg002_prefix"
+hg002_reads="hg002.fastq.gz"
 hg002_gold="HG002_GRCh38_1_22_v4.2.1_benchmark.bed"
+
+hg38_chr22_prefix="hg38_chr22_prefix"
+hg002_chr22_prefix="hg002_chr22_prefix"
+hg002_chr22_reads="hg002.chr22.fastq.gz"
 hg002_chr22_gold="HG002_GRCh38_22_v4.2.1_benchmark.bed"
 
 CONFIG_FILE="faves-config.sh"
@@ -176,11 +186,11 @@ conda activate gatk
 if [ "$RUN_FVS" = "true" ]; then
     # CHROMOSOME 22
     faves_pipeline $hg38_chr22_prefix $hg002_chr22_prefix $hg002_chr22_reads
-    snp_eval "GATK vs Gold - chr22" "$tmp_dir/$hg002_chr22_prefix.faves.snps.bed" "$hg002_chr22_gold"
+    snp_eval "GATK vs Gold - chr22" "$tmp_dir/faves/$hg002_chr22_prefix.faves.snps.bed" "$hg002_chr22_gold"
 
     # WGA
     faves_pipeline $hg38_prefix $hg002_prefix $hg002_reads
-    snp_eval "GATK vs Gold" "$tmp_dir/$hg002_prefix.faves.snps.bed" "$hg002_gold"
+    snp_eval "GATK vs Gold" "$tmp_dir/faves/$hg002_prefix.faves.snps.bed" "$hg002_gold"
 fi
 
 # -----------------------------------------
@@ -189,6 +199,12 @@ fi
 # -----------------------------------------
 # -----------------------------------------
 if [ "$RUN_MM2" = "true" ]; then
+    # ecoli
+    minimap2_pipeline $ecoli_prefix $ecoli_sim_prefix $ecoli_sim_reads
+
+    # fruit fly
+    minimap2_pipeline $dm6_prefix $dm6_sim_prefix $dm6_sim_reads
+
     # CHROMOSOME 22
     minimap2_pipeline $hg38_chr22_prefix $hg002_chr22_prefix $hg002_chr22_reads
 
@@ -202,13 +218,23 @@ fi
 # -----------------------------------------
 # -----------------------------------------
 if [ "$RUN_GTK" = "true" ]; then
+    # ecoli
+    gatk_pipeline $ecoli_prefix $ecoli_sim_prefix
+
+    # fruit fly
+    gatk_pipeline $dm6_prefix $dm6_sim_prefix
+
     # CHROMOSOME 22
     gatk_pipeline $hg38_chr22_prefix $hg002_chr22_prefix
-    snp_eval "GATK vs Gold - chr22" "$tmp_dir/$hg002_chr22_prefix.mm2.gatk.snps.bed" "$hg002_chr22_gold"
 
     # WGA
     gatk_pipeline $hg38_prefix $hg002_prefix
-    snp_eval "GATK vs Gold" "$tmp_dir/$hg002_prefix.mm2.gatk.snps.bed" "$hg002_gold"
+
+    # Print results
+    snp_eval "GATK vs Gold - ecoli" "$tmp_dir/faves/$ecoli_sim_prefix.mm2.gatk.snps.bed" "$ecoli_sim_gold"
+    snp_eval "GATK vs Gold - dm6" "$tmp_dir/faves/$dm6_sim_prefix.mm2.gatk.snps.bed" "$dm6_sim_gold"
+    snp_eval "GATK vs Gold - chr22" "$tmp_dir/faves/$hg002_chr22_prefix.mm2.gatk.snps.bed" "$hg002_chr22_gold"
+    snp_eval "GATK vs Gold - hg002" "$tmp_dir/faves/$hg002_prefix.mm2.gatk.snps.bed" "$hg002_gold"
 fi
 
 # -----------------------------------------
@@ -219,11 +245,11 @@ fi
 if [ "$RUN_E2I" = "true" ]; then
     # CHROMOSOME 22
     ebwt2InDel_pipeline $hg38_chr22_prefix $hg002_chr22_prefix $hg002_chr22_reads
-    snp_eval "GATK vs Gold - chr22" "$tmp_dir/$hg002_chr22_prefix.ebwt2InDel.5.snps.bed" "$hg002_chr22_gold"
+    snp_eval "GATK vs Gold - chr22" "$tmp_dir/faves/$hg002_chr22_prefix.ebwt2InDel.5.snps.bed" "$hg002_chr22_gold"
 
     # WGA
     ebwt2InDel_pipeline $hg38_prefix $hg002_prefix $hg002_reads
-    snp_eval "GATK vs Gold" "$tmp_dir/$hg002_prefix.ebwt2InDel.5.snps.bed" "$hg002_gold"
+    snp_eval "GATK vs Gold - hg002" "$tmp_dir/faves/$hg002_prefix.ebwt2InDel.5.snps.bed" "$hg002_gold"
 fi
 
 # conda cleanup

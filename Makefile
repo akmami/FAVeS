@@ -1,4 +1,3 @@
-
 TARGET := faves
 SRCS := $(wildcard *.c)
 OBJS := $(SRCS:.c=.o)
@@ -15,11 +14,11 @@ LDFLAGS := -lm -pthread -lz
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(CXXLIBS) $(LDFLAGS) -L lib -lblend -lminimizer
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -L lib -lblend
 	rm -f $(OBJS)
 
 %.o: %.c
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 
 # ========================================
 #  Utility Targets
@@ -36,10 +35,4 @@ blend:
 	ar rcs lib/libblend.a blend.o
 	@rm -f blend.o
 
-minimizer: 
-	@mkdir -p lib
-	$(CC) $(CFLAGS) -c sketch/minimizer.c -I minimizer
-	ar rcs lib/libminimizer.a minimizer.o
-	@rm -f minimizer.o
-
-install: clean blend minimizer $(TARGET)
+install: clean blend $(TARGET)
