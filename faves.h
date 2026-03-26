@@ -9,7 +9,7 @@
 
 
 KHASHL_MAP_INIT(KH_LOCAL, map32_t, map32, uint64_t, uint32_t, kh_hash_uint64, kh_eq_generic)
-KHASHL_MAP_INIT(KH_LOCAL, map8_t, map8, uint32_t, uint8_t, kh_hash_uint64, kh_eq_generic)
+KHASHL_MAP_INIT(KH_LOCAL, map8_t, map8, uint64_t, uint8_t, kh_hash_uint64, kh_eq_generic)
 
 
 void process_fasta(params_t *p, uint128_t **seeds, uint64_t *seeds_len, map32_t **index_table, ref_seq_t **seqs, int *chrom_count);

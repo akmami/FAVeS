@@ -176,46 +176,47 @@ void process_fasta(params_t *p, uint128_t **seeds, uint64_t *seeds_len, map32_t 
         exit(1);
     }
 
-    for (uint64_t i = 0; i < all_seeds_len; i++) {
-        uint32_t kmer = (uint32_t)__sketch_get_kmer(all_seeds[i]);
+    uint64_t total_seed_count = 0;
 
+    for (uint64_t i = 0; i < all_seeds_len; i++) {
+        uint64_t kmer = (uint64_t)__sketch_get_kmer(all_seeds[i]);
         khint_t k = map8_get(dup_map, kmer);
         if (k == kh_end(dup_map)) {
             // first time seen
             int absent;
             k = map8_put(dup_map, kmer, &absent);
-            kh_val(dup_map, k) = 0;
+            kh_val(dup_map, k) = 1;
+            total_seed_count++;
         } else {
             // seen before -> mark duplicate
-            khint_t kd = map8_get(dup_map, kmer);
-            if (kd != kh_end(dup_map)) {
-                kh_val(dup_map, kd) = 1;
-            } else {
-                // should not happen, but be safe
-                int absent;
-                kd = map8_put(dup_map, kmer, &absent);
-                kh_val(dup_map, kd) = 2;
+            if (kh_val(dup_map, k) != 255) {
+                kh_val(dup_map, k) += 1;
+            }
+            if (kh_val(dup_map, k) >= __DEFAULT_UPPER_BOUND_FREQUENCY__) {
+                total_seed_count--;
             }
         }
     }
+
+    fprintf(stderr, "[%s::seed] Number of total seeds upper bounded with %ld\n", __TOOL_SHORT_NAME__, total_seed_count);
 
     map32_t *temp_index_table = *index_table;
     uint64_t unique_seeds_len = 0;
     double total_unique_seed_span = 0;
 
     for (uint64_t i = 0; i < all_seeds_len; i++) {
-        uint32_t kmer = (uint32_t)__sketch_get_kmer(all_seeds[i]);
+        uint64_t kmer = (uint64_t)__sketch_get_kmer(all_seeds[i]);
 
-        khint_t kd = map8_get(dup_map, kmer);
-        if (kd == kh_end(dup_map)) continue; // safety
+        khint_t k = map8_get(dup_map, kmer);
+        if (k == kh_end(dup_map)) continue; // safety
 
-        if (kh_val(dup_map, kd) != 0) {
+        if (kh_val(dup_map, k) > __DEFAULT_UPPER_BOUND_FREQUENCY__) {
             // duplicate -> skip from unique list
             continue;
         }
 
         // appears exactly once; add to unique list and map kmer->unique_index
-        khint_t k; int absent;
+        int absent;
         k = map32_put(temp_index_table, kmer, &absent);
         kh_val(temp_index_table, k) = (uint32_t)i;
 
@@ -230,7 +231,7 @@ void process_fasta(params_t *p, uint128_t **seeds, uint64_t *seeds_len, map32_t 
     *seeds_len = all_seeds_len;
 
     if (p->verbose) {
-        fprintf(stderr, "[%s::ref] Processed (uniq #: %lu - %.2f%c, seed #: %lu, span avg: %.2f)\n", __TOOL_SHORT_NAME__, unique_seeds_len, (double)unique_seeds_len / (double)all_seeds_len, '%', all_seeds_len, total_unique_seed_span / unique_seeds_len);
+        fprintf(stderr, "[%s::ref] Processed (uniq #: %lu - %.2f%c, seed #: %lu, avg len: %.2f)\n", __TOOL_SHORT_NAME__, unique_seeds_len, (double)unique_seeds_len / (double)all_seeds_len, '%', all_seeds_len, total_unique_seed_span / unique_seeds_len);
     }
 }
 
@@ -333,7 +334,7 @@ void process_records(params_t *p, map32_t *index_table, uint128_t *seeds, uint64
     }
 
     if (p->verbose) {
-        fprintf(stderr, "[%s::time] elapsed: %02d:%02d:%02d (%.2f%c idle)\n", __TOOL_SHORT_NAME__, (int)((program_end - program_start) / 3600), (int)((program_end - program_start) / 60) % 3600, ((int)(program_end - program_start) % 60), total_exec_sec / (program_end - program_start), '%');
+        fprintf(stderr, "[%s::time] elapsed: %02d:%02d:%02d (%.2f%c idle)\n", __TOOL_SHORT_NAME__, (int)((program_end - program_start) / 3600), (int)((program_end - program_start) / 60) % 3600, ((int)(program_end - program_start) % 60), 100 * total_exec_sec / (program_end - program_start), '%');
     }
 
     // cleanup unnesesary indices
@@ -372,7 +373,7 @@ void process_records(params_t *p, map32_t *index_table, uint128_t *seeds, uint64
     }
 
     if (p->verbose) {
-        fprintf(stderr, "[%s::records] query: uniq %lu, non-uniq %lu, no-seed %lu | seed #: %lu, uniq #: %lu, mismatch #: %lu | radious #: %lu\n", __TOOL_SHORT_NAME__, stats.countains_unique, stats.only_non_unique, stats.no_seed, stats.total_seed_count, stats.total_uniq_count, stats.mismatch_count, stats.neighbour_count);
+        fprintf(stderr, "[%s::records] query: uniq %lu, non-uniq %lu, no-seed %lu | seed #: %lu, uniq #: %lu, mismatch #: %lu | radius #: %lu\n", __TOOL_SHORT_NAME__, stats.countains_unique, stats.only_non_unique, stats.no_seed, stats.total_seed_count, stats.total_uniq_count, stats.mismatch_count, stats.neighbour_count);
     }
 
     uint64_t total_consensus_var = 0;
@@ -533,7 +534,7 @@ void *worker_process_record(void *arg) {
                     bases,
                     temp_seeds[read_anchor_idx_begin],
                     temp_seeds[read_anchor_idx_end],
-                    __blend_get_strand(temp_seeds[read_anchor_idx]),
+                    __blend_get_strand(temp_seeds[read_anchor_idx]) ^ __blend_get_strand(seeds[ref_anchor_idx]),
                     mismatch_count
                 );
             }
