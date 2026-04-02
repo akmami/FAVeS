@@ -13,6 +13,7 @@
 #define __DEFAULT_BLEND_BITS__ 32
 #define __DEFAULT_BLEND_NEIGHBOR_NUMBER__ 7
 #define __DEFAULT_CONSENSUS_THRESHOLD__ 10
+#define __DEFAULT_CONSENSUS_FRAC_THRESHOLD__ 0.3
 #define __DEFAULT_RADIUS__ 5
 #define __DEFAULT_THREAD_NUMBER__ 4
 #define __DEFAULT_SKETCH_CAPACITY__ 40000000
@@ -71,10 +72,13 @@ typedef struct {
     int blend_bits;
     int n_neighbors;
     int min_consensus;
+    float min_consensus_frac;
+    int use_consensus_frac;
     int radius;
     int n_threads;
     int progress;
     int verbose;
+    uint64_t all_seq_len;       // length of all seqeunces combined
 } params_t;
 
 typedef struct {
@@ -85,6 +89,7 @@ typedef struct {
     uint64_t total_seed_count;  // overall
     uint64_t mismatch_count;    // overall
     uint64_t neighbour_count;   // span
+    uint64_t all_seq_len;       // length of all seqeunces combined
 } stats_t;
 
 // -----------------------------------------------------------
@@ -92,19 +97,19 @@ typedef struct {
 // VARIATION RELATED STRUCTURES
 // -----------------------------------------------------------
 // -----------------------------------------------------------
-static const uint64_t variation_index = ((1ULL << 52) - 1) << 3;
+static const uint64_t variation_index_mask = ((1ULL << 47) - 1) << 3;
 
-#define __get_variation_chrom(x) ((x) >> 55)
-#define __get_variation_index(x) (((x) & variation_index) >> 3) 
+#define __get_variation_chrom(x) ((x) >> 50)
+#define __get_variation_index(x) (((x) & variation_index_mask) >> 3) 
 #define __get_variation_type(x) ((x) & 7)
 
-#define __set_variation_chrom(x, idx) ((x) |= ((uint64_t)(idx) << 55))
+#define __set_variation_chrom(x, idx) ((x) |= ((uint64_t)(idx) << 50))
 #define __set_variation_index(x, idx) ((x) |= ((uint64_t)(idx) << 3)) 
 #define __set_variation_type(x, type) ((x) |= ((type) & 7))
-#define __set_variation_bits(chrom, index, type) (((chrom) << 55) | ((index) << 3) | ((type) & 7))
+#define __set_variation_bits(chrom, index, type) (((chrom) << 50) | ((index) << 3) | ((type) & 7))
 #define __set_variation(x, chrom, index, type) ((x) = __set_variation_bits(chrom, index, type))
 
-typedef uint64_t variation_t; // chrom (9 bits) + index (52 bits) + type (3 bits)
+typedef uint64_t variation_t; // chrom (14 bits) + index (47 bits) + type (3 bits)
 
 BVEC_INIT(var, variation_t)
 
@@ -127,7 +132,6 @@ typedef struct {
     stats_t stats;
     var_bvec_t *fv_variants;
 } params_lite_t;
-
 
 typedef struct {
     char *bases;

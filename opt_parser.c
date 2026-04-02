@@ -19,11 +19,12 @@ void print_usage(const char *prog) {
         "  -n, --n-neighbors <int>   number of neighbour [%d]\n"
         "  -r, --redius <int>        span radius [%d]\n"
         "  -c, --consensus <int>     minimum consensus threshold [%d]\n"
+        "  -d, --min-c-frac <float>  minimum consensus frac compared to depth [%.02f]\n"
         "  -t, --threads             thread number [%d]\n"
         "  -p, --progress            display progress\n"
         "  -v, --verbose             display messages\n"
         "  -h, --help                show this help\n",
-        prog, __DEFAULT_BLEND_K__, __DEFAULT_BLEND_w__, __DEFAULT_BLEND_BITS__, __DEFAULT_BLEND_NEIGHBOR_NUMBER__, __DEFAULT_RADIUS__, __DEFAULT_CONSENSUS_THRESHOLD__, __DEFAULT_THREAD_NUMBER__
+        prog, __DEFAULT_BLEND_K__, __DEFAULT_BLEND_w__, __DEFAULT_BLEND_BITS__, __DEFAULT_BLEND_NEIGHBOR_NUMBER__, __DEFAULT_RADIUS__, __DEFAULT_CONSENSUS_THRESHOLD__, __DEFAULT_CONSENSUS_FRAC_THRESHOLD__,__DEFAULT_THREAD_NUMBER__
     );
 }
 
@@ -34,6 +35,7 @@ void init_params(params_t *p) {
     p->n_neighbors = __DEFAULT_BLEND_NEIGHBOR_NUMBER__;
     p->radius = __DEFAULT_RADIUS__;
     p->min_consensus = __DEFAULT_CONSENSUS_THRESHOLD__;
+    p->min_consensus_frac = __DEFAULT_CONSENSUS_FRAC_THRESHOLD__;
     p->progress = __DEFAULT_PROGRESS__;
     p->verbose = __DEFAULT_VERBOSE__;
     p->n_threads = __DEFAULT_THREAD_NUMBER__;
@@ -44,28 +46,31 @@ void parse_args(int argc, char **argv, params_t *p) {
     init_params(p);
 
     static struct option long_opts[] = {
-        {"fasta",       required_argument, 0, 'f'},
-        {"fastq",       required_argument, 0, 'q'},
-        {"output",      required_argument, 0, 'o'},
-        {"kmer",        required_argument, 0, 'k'},
-        {"window",      required_argument, 0, 'w'},
-        {"blend-bits",  required_argument, 0, 'b'},
-        {"n-neighbors", required_argument, 0, 'n'},
-        {"radius",      required_argument, 0, 'r'},
-        {"consensus",   required_argument, 0, 'c'},
-        {"threads",     required_argument, 0, 't'},
-        {"progress",    no_argument,       0, 'p'},
-        {"verbose",     no_argument,       0, 'v'},
-        {"help",        no_argument,       0, 'h' },
+        {"fasta",           required_argument, 0, 'f'},
+        {"fastq",           required_argument, 0, 'q'},
+        {"output",          required_argument, 0, 'o'},
+        {"kmer",            required_argument, 0, 'k'},
+        {"window",          required_argument, 0, 'w'},
+        {"blend-bits",      required_argument, 0, 'b'},
+        {"n-neighbors",     required_argument, 0, 'n'},
+        {"radius",          required_argument, 0, 'r'},
+        {"consensus",       required_argument, 0, 'c'},
+        {"consensus-frac",  required_argument, 0, 'd'},
+        {"threads",         required_argument, 0, 't'},
+        {"progress",        no_argument,       0, 'p'},
+        {"verbose",         no_argument,       0, 'v'},
+        {"help",            no_argument,       0, 'h' },
         {0, 0, 0, 0}
     };
 
     int is_f_set = 0; 
     int is_q_set = 0;
     int is_o_set = 0;
+    int is_min_consensus_set = 0;
+    int is_min_consensus_frac_set = 0;
 
     int opt, idx;
-    while ((opt = getopt_long(argc, argv, "f:q:o:k:w:b:n:r:c:t:pvh", long_opts, &idx)) != -1) {
+    while ((opt = getopt_long(argc, argv, "f:q:o:k:w:b:n:r:c:d:t:pvh", long_opts, &idx)) != -1) {
         switch (opt) {
         case 'f':
             p->fasta = optarg;
@@ -96,6 +101,11 @@ void parse_args(int argc, char **argv, params_t *p) {
             break;
         case 'c':
             p->min_consensus = atoi(optarg);
+            is_min_consensus_set = 1;
+            break;
+        case 'd':
+            p->min_consensus_frac = atof(optarg);
+            is_min_consensus_frac_set = 1;
             break;
         case 't':
             p->n_threads = atoi(optarg);
@@ -159,14 +169,25 @@ void parse_args(int argc, char **argv, params_t *p) {
         exit(1);  
     }
 
+    if (is_min_consensus_frac_set) {
+        p->use_consensus_frac = 1;
+    } else if (is_min_consensus_set) {
+        p->use_consensus_frac = 0;
+    } else {
+        p->use_consensus_frac = 1;
+    }
+
     if (p->verbose) {
         fprintf(stderr,
             "[%s::args] fa: %s\n"
             "[%s::args] fq: %s\n"
-            "[%s::args] k: %d, w: %d, b: %d, n: %d, r: %d, c: %d, t: %d\n",
+            "[%s::args] k: %d, w: %d, b: %d, n: %d, r: %d, %c: %0.2f, t: %d\n",
             __TOOL_SHORT_NAME__, p->fasta, 
             __TOOL_SHORT_NAME__, p->fastq, 
-            __TOOL_SHORT_NAME__, p->k, p->w, p->blend_bits, p->n_neighbors, p->radius, p->min_consensus, p->n_threads
+            __TOOL_SHORT_NAME__, p->k, p->w, p->blend_bits, p->n_neighbors, p->radius, 
+            p->use_consensus_frac ? 'd' : 'c',
+            p->use_consensus_frac ? p->min_consensus_frac : p->min_consensus,
+            p->n_threads
         );
     }
 }

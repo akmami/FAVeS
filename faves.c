@@ -24,11 +24,10 @@ BVEC_INIT(uint64, uint64_t)
     mismatch_count += alignment_mismatches; \
 }
 
-#define align_seeds_radius(seqs, seq1_seed_begin, seq1_seed_end, seq, seq2_seed_begin, seq2_seed_end, seq2_seed_strand, mismatch_count) { \
+#define align_seeds_radius(seqs, seq1_seed_begin, seq1_seed_end, seq1_id, seq, seq2_seed_begin, seq2_seed_end, seq2_seed_strand, mismatch_count) { \
     /* uint64_t seq1_kmer = __sketch_get_kmer(seq1_seed); */ \
     uint64_t seq1_index = __sketch_get_index(seq1_seed_begin); \
     uint64_t seq1_span  = __sketch_get_index(seq1_seed_end) + __sketch_get_length(seq1_seed_end) - seq1_index; \
-    uint64_t seq1_id    = __sketch_get_reference_id(seq1_seed_begin); \
     /* int seq1_strand = __sketch_get_strand(seq1_seed); */ \
     uint64_t seq2_index = __sketch_get_index(seq2_seed_begin); \
     uint64_t seq2_span  = __sketch_get_index(seq2_seed_end) + __sketch_get_length(seq2_seed_end) - seq2_index; \
@@ -109,6 +108,7 @@ void process_fasta(params_t *p, uint128_t **seeds, uint64_t *seeds_len, map32_t 
     uint128_t *all_seeds;
     uint64_t all_seeds_len = 0;
     uint64_t all_seeds_cap = __DEFAULT_SKETCH_CAPACITY__;
+    uint64_t all_seq_len = 0;
 
     all_seeds = (uint128_t *)malloc(sizeof(uint128_t) * all_seeds_cap);
     if (!all_seeds) {
@@ -133,6 +133,7 @@ void process_fasta(params_t *p, uint128_t **seeds, uint64_t *seeds_len, map32_t 
         ((*seqs)[chrom_index]).chrom = (char *)malloc(len + 1);
         memcpy(((*seqs)[chrom_index]).chrom, bases, len);
         (*seqs)[chrom_index].chrom[len] = '\0';
+        all_seq_len += len;
 
         uint128_t *chr_seeds;
         uint64_t chr_seeds_len = 0;
@@ -192,7 +193,7 @@ void process_fasta(params_t *p, uint128_t **seeds, uint64_t *seeds_len, map32_t 
             if (kh_val(dup_map, k) != 255) {
                 kh_val(dup_map, k) += 1;
             }
-            if (kh_val(dup_map, k) >= __DEFAULT_UPPER_BOUND_FREQUENCY__) {
+            if (kh_val(dup_map, k) == __DEFAULT_UPPER_BOUND_FREQUENCY__) {
                 total_seed_count--;
             }
         }
@@ -210,7 +211,7 @@ void process_fasta(params_t *p, uint128_t **seeds, uint64_t *seeds_len, map32_t 
         khint_t k = map8_get(dup_map, kmer);
         if (k == kh_end(dup_map)) continue; // safety
 
-        if (kh_val(dup_map, k) > __DEFAULT_UPPER_BOUND_FREQUENCY__) {
+        if (kh_val(dup_map, k) >= __DEFAULT_UPPER_BOUND_FREQUENCY__) {
             // duplicate -> skip from unique list
             continue;
         }
@@ -233,6 +234,8 @@ void process_fasta(params_t *p, uint128_t **seeds, uint64_t *seeds_len, map32_t 
     if (p->verbose) {
         fprintf(stderr, "[%s::ref] Processed (uniq #: %lu - %.2f%c, seed #: %lu, avg len: %.2f)\n", __TOOL_SHORT_NAME__, unique_seeds_len, (double)unique_seeds_len / (double)all_seeds_len, '%', all_seeds_len, total_unique_seed_span / unique_seeds_len);
     }
+
+    p->all_seq_len = all_seq_len;
 }
 
 void process_records(params_t *p, map32_t *index_table, uint128_t *seeds, uint64_t seeds_len, ref_seq_t *seqs) {
@@ -359,7 +362,7 @@ void process_records(params_t *p, map32_t *index_table, uint128_t *seeds, uint64
         }
     }
 
-    stats_t stats = (stats_t){0ULL, 0ULL, 0ULL, 0ULL, 0ULL, 0ULL, 0ULL};
+    stats_t stats = (stats_t){0ULL, 0ULL, 0ULL, 0ULL, 0ULL, 0ULL, 0ULL, 0ULL};
     for (int i = 0; i < p->n_threads; i++) {
         stats.countains_unique += ctx[i].p->stats.countains_unique;
         stats.only_non_unique += ctx[i].p->stats.only_non_unique;
@@ -368,8 +371,20 @@ void process_records(params_t *p, map32_t *index_table, uint128_t *seeds, uint64
         stats.total_uniq_count += ctx[i].p->stats.total_uniq_count;
         stats.mismatch_count += ctx[i].p->stats.mismatch_count;
         stats.neighbour_count += ctx[i].p->stats.neighbour_count;
+        stats.all_seq_len += ctx[i].p->stats.all_seq_len;
         var_free(ctx[i].p->fv_variants);
         free(ctx[i].p);
+    }
+
+    int min_consensus = 0;
+    if (p->use_consensus_frac) {
+        double depth = (double)stats.all_seq_len / p->all_seq_len;
+        min_consensus = (int)((depth - 1) * p->min_consensus_frac) + 1;
+        if (p->verbose) {
+            fprintf(stderr, "[%s::stats] depth: %.2f, min consensus: %d\n", __TOOL_SHORT_NAME__, depth, min_consensus);
+        }
+    } else {
+        min_consensus = p->min_consensus;
     }
 
     if (p->verbose) {
@@ -403,7 +418,7 @@ void process_records(params_t *p, map32_t *index_table, uint128_t *seeds, uint64
             }
 
             // if consensus is strong enough, print it
-            if (count > p->min_consensus) {
+            if (count > min_consensus) {
                 total_consensus_var++;
                 uint64_t chrom = __get_variation_chrom(current);
                 uint64_t pos   = __get_variation_index(current);
@@ -445,13 +460,12 @@ void *worker_process_record(void *arg) {
     int blend_bits = ctx->p->blend_bits;
     int n_neighbors = ctx->p->n_neighbors;
     int radius = ctx->p->radius;
+    uint64_t all_seq_len = 0;
 
     ref_seq_t *seqs = ctx->p->seqs;
     uint128_t *seeds = (uint128_t *)ctx->p->seeds;
     uint64_t seeds_len = ctx->p->seeds_len;
     map32_t *index_table = (map32_t *)ctx->p->index_table;
-
-    uint64_bvec_t *ids = uint64_init(64);
 
     uint64_t countains_unique = 0, only_non_unique = 0, no_seed = 0, total_seed_count = 0, total_uniq_count = 0, mismatch_count = 0, neighbour_count = 0;
 
@@ -472,36 +486,24 @@ void *worker_process_record(void *arg) {
             char *bases = records->records[record_index].bases;
             int len = records->records[record_index].len;
 
+            all_seq_len += len;
+
             uint128_t *temp_seeds;
             uint64_t temp_seeds_len = 0;
             temp_seeds_len = sketch_blend(bases, len, w, k, blend_bits, n_neighbors, 0, &temp_seeds);
+            int is_uniq_set = 0;
 
-            uint64_clear(ids);
-            
             for (uint64_t read_anchor_idx = 0; read_anchor_idx < temp_seeds_len; read_anchor_idx++) {
                 khint_t k = map32_get(index_table, __sketch_get_kmer(temp_seeds[read_anchor_idx]));
 
                 if (k == kh_end(index_table)) continue;
 
+                total_uniq_count++;
+
                 uint64_t ref_anchor_idx = kh_val(index_table, k);
-
-                if (seeds_len <= ref_anchor_idx) {
-                    fprintf(stderr, "[%s::err] Weird stuff is ongoing.\n", __TOOL_SHORT_NAME__);
-                    abort();
-                }
-
-                uint64_add(ids, pack_id(ref_anchor_idx, read_anchor_idx));
-            }
-            
-            total_uniq_count += ids->size;
-            
-            for (uint32_t unique_ids_index = 0; unique_ids_index < ids->size; unique_ids_index++) {
-
-                uint32_t ref_anchor_idx = unpack_ref(ids->array[unique_ids_index]);
                 uint32_t ref_anchor_idx_begin = ref_anchor_idx;
                 uint32_t ref_anchor_idx_end = ref_anchor_idx;
 
-                uint32_t read_anchor_idx = unpack_read(ids->array[unique_ids_index]);
                 uint32_t read_anchor_idx_begin = read_anchor_idx;
                 uint32_t read_anchor_idx_end = read_anchor_idx;
 
@@ -531,19 +533,22 @@ void *worker_process_record(void *arg) {
                     seqs,
                     seeds[ref_anchor_idx_begin],
                     seeds[ref_anchor_idx_end],
+                    __sketch_get_reference_id(seeds[ref_anchor_idx]),
                     bases,
                     temp_seeds[read_anchor_idx_begin],
                     temp_seeds[read_anchor_idx_end],
-                    __blend_get_strand(temp_seeds[read_anchor_idx]) ^ __blend_get_strand(seeds[ref_anchor_idx]),
+                    __sketch_get_strand(temp_seeds[read_anchor_idx]) ^ __sketch_get_strand(seeds[ref_anchor_idx]),
                     mismatch_count
                 );
+
+                is_uniq_set = 1;
             }
 
             if (temp_seeds_len) free(temp_seeds);
 
             total_seed_count += temp_seeds_len;
 
-            if (ids->size) {
+            if (is_uniq_set) {
                 countains_unique++;
             } else if (temp_seeds_len) {
                 only_non_unique++;
@@ -556,8 +561,6 @@ void *worker_process_record(void *arg) {
         batch_records_destroy(records);
     }
 
-    uint64_free(ids);
-
     ctx->p->stats.countains_unique = countains_unique;
     ctx->p->stats.only_non_unique = only_non_unique;
     ctx->p->stats.no_seed = no_seed;
@@ -565,5 +568,6 @@ void *worker_process_record(void *arg) {
     ctx->p->stats.total_uniq_count = total_uniq_count;
     ctx->p->stats.mismatch_count = mismatch_count;
     ctx->p->stats.neighbour_count = neighbour_count;
+    ctx->p->stats.all_seq_len = all_seq_len;
     return NULL;
 }

@@ -5,7 +5,8 @@
 extern "C" {
 #endif
 
-static const uint64_t MASK_LS_32_BITS = (1ULL << 32) - 1;   // = 0xFFFFFFFF, get right-most 32 bits
+static const uint64_t MASK_LS_32_BITS = 0xFFFFFFFF;   // = 0xFFFFFFFF, get right-most 32 bits
+static const uint64_t MASK_MS_32_BITS = 0xFFFFFFFF00000000;   // = 0xFFFFFFFF00000000, get left-most 32 bits
 static const uint64_t MASK_KMER_SPAN  = (1ULL << 14) - 1;   // = 0x3FFF, mask bits for kmer span
 static const uint64_t MASK_KMER_INDEX = ((1ULL << 31) - 1) << 1;   // = 0xFFFFFFFE, mask bits for index
 
@@ -98,7 +99,7 @@ static inline uint64_t calc_blend_rm_simd(__m256i *blend_count_lsb, __m256i *ble
                                          blend_bits_count);                                                         \
         uint128_t blend_info;                                                                                       \
         blend_info.x = blend_value << 14 | (current_end - prefix##_blend_buffer[prefix##_blend_buffer_pos].y);      \
-        blend_info.y = __blend_get_reference_id(current_seed) |                                                     \
+        blend_info.y = (current_seed.y & MASK_MS_32_BITS) |                                                     \
                        ((prefix##_blend_buffer[prefix##_blend_buffer_pos].y << 1) & MASK_LS_32_BITS) |              \
                        __blend_get_strand(current_seed);                                                            \
         temp_fuzzy_seeds[seed_count++] = blend_info;                                                                \
