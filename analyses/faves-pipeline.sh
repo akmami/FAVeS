@@ -1,7 +1,15 @@
-RUN_FVS="true"
-RUN_MM2="true"
-RUN_GTK="true"
-RUN_E2I="true"
+RUN_FVS_DM6="true"
+RUN_MM2_DM6="true"
+RUN_GTK_DM6="true"
+RUN_E2I_DM6="true"
+RUN_FVS_ECOLI="true"
+RUN_MM2_ECOLI="true"
+RUN_GTK_ECOLI="true"
+RUN_E2I_ECOLI="true"
+RUN_FVS_HUMAN="true"
+RUN_MM2_HUMAN="true"
+RUN_GTK_HUMAN="true"
+RUN_E2I_HUMAN="true"
 
 tmp_dir=.
 ref_dir=.
@@ -68,16 +76,16 @@ faves_pipeline() {
     local sample_prefix=$2
     local fastq=$3
 
-    echo "Running FAVeS ..."
+    echo "Running FAVeS $ref_prefix ..."
     
     mkdir -p $tmp_dir/faves
 
-    /bin/time -v faves \
+    /bin/time -v ../faves \
         -f $ref_dir/$ref_prefix.fasta \
         -q $fastq \
         -t 64 \
         -o $tmp_dir/faves/$sample_prefix.faves.snps.bed \
-        -p -v
+        -v 2> $tmp_dir/faves/$sample_prefix.log
 }
 
 minimap2_pipeline() {
@@ -85,7 +93,7 @@ minimap2_pipeline() {
     local sample_prefix=$2
     local fastq=$3
 
-    echo "Running minimap2 ..."
+    echo "Running minimap2 $ref_prefix ..."
 
     if [ ! -f "$ref_dir/$ref_prefix.fasta" ]; then
         echo "Missing fasta $ref_dir/$ref_prefix.fasta"
@@ -102,20 +110,20 @@ minimap2_pipeline() {
         -R '@RG\tID:1\tSM:hg002\tPL:ILLUMINA\tLB:lib1\tPU:unit1' \
         $ref_dir/$ref_prefix.fasta \
         $fastq \
-        -t 64 > $tmp_dir/$sample_prefix.mm2.sam
+        -t 64 > $tmp_dir/$sample_prefix.mm2.sam 2> $tmp_dir/faves/$sample_prefix.log
 
-    /bin/time -v samtools sort $tmp_dir/$sample_prefix.mm2.sam > $tmp_dir/$sample_prefix.mm2.bam
+    /bin/time -v samtools sort $tmp_dir/$sample_prefix.mm2.sam > $tmp_dir/$sample_prefix.mm2.bam 2>> $tmp_dir/faves/$sample_prefix.log
 
     rm -f $tmp_dir/$sample_prefix.mm2.sam
 
-    /bin/time -v samtools index $tmp_dir/$sample_prefix.mm2.bam
+    /bin/time -v samtools index $tmp_dir/$sample_prefix.mm2.bam 2>> $tmp_dir/faves/$sample_prefix.log
 }
 
 gatk_pipeline() {
     local ref_prefix=$1
     local sample_prefix=$2
 
-    echo "Running GATK ..."
+    echo "Running GATK $ref_prefix ..."
 
     if [ ! -f "$ref_dir/$ref_prefix.fasta" ]; then
         echo "Missing fasta $ref_dir/$ref_prefix.fasta"
@@ -138,13 +146,13 @@ gatk_pipeline() {
         --input $tmp_dir/$sample_prefix.mm2.bam \
         --output $tmp_dir/faves/$sample_prefix.mm2.gatk.vcf.gz \
         --QUIET true \
-        --native-pair-hmm-threads 64
+        --native-pair-hmm-threads 64 2>&1 $tmp_dir/faves/$sample_prefix.log
     
     /bin/time -v gatk SelectVariants \
         -R $ref_dir/$ref_prefix.fasta \
         -V $tmp_dir/faves/$sample_prefix.mm2.gatk.vcf.gz \
         --select-type-to-include SNP \
-        -O $tmp_dir/faves/$sample_prefix.mm2.gatk.snps.vcf
+        -O $tmp_dir/faves/$sample_prefix.mm2.gatk.snps.vcf 2>> $tmp_dir/faves/$sample_prefix.log
 
     bcftools query -f '%CHROM\t%POS\t%ID\t%REF\t%ALT\n' $tmp_dir/faves/$sample_prefix.mm2.gatk.snps.vcf | \
         awk 'BEGIN{OFS="\t"}{start=$2-1; end=start+length($4); print $1,start,end,$3,$4,$5}' > $tmp_dir/faves/$sample_prefix.mm2.gatk.snps.bed
@@ -159,7 +167,7 @@ ebwt2InDel_pipeline() {
     local sample_prefix=$2
     local fasta=$3
 
-    echo "Running ebwt2InDel ..."
+    echo "Running ebwt2InDel $ref_prefix ..."
 
     if [ ! -f "$fasta" ]; then
         echo "Missing reads $fasta"
@@ -168,14 +176,14 @@ ebwt2InDel_pipeline() {
 
     mkdir -p $tmp_dir/faves
 
-    /bin/time -v BCR\_LCP\_GSA $fasta $tmp_dir/$sample_prefix.ebwt2InDel.bwt 1024
+    /bin/time -v BCR\_LCP\_GSA $fasta $tmp_dir/$sample_prefix.ebwt2InDel.bwt
 
     /bin/time -v ebwt2InDel -1 $tmp_dir/$sample_prefix.ebwt2InDel.bwt -o $tmp_dir/faves/$sample_prefix.ebwt2InDel.snp
 
     filter_snp $tmp_dir/faves/$sample_prefix.ebwt2InDel.snp 5 > $tmp_dir/faves/$sample_prefix.ebwt2InDel.5.snp
 }
 
-source ~/.bashrc
+load_conda
 conda activate gatk
 
 # -----------------------------------------
@@ -183,14 +191,27 @@ conda activate gatk
 # FAVeS
 # -----------------------------------------
 # -----------------------------------------
-if [ "$RUN_FVS" = "true" ]; then
-    # CHROMOSOME 22
+if [ "$RUN_FVS_ECOLI" = "true" ]; then
+    faves_pipeline $ecoli_prefix $ecoli_sim_prefix $ecoli_sim_reads
+fi
+if [ "$RUN_FVS_DM6" = "true" ]; then
+    faves_pipeline $dm6_prefix $dm6_sim_prefix $dm6_sim_reads
+fi
+if [ "$RUN_FVS_HUMAN" = "true" ]; then
     faves_pipeline $hg38_chr22_prefix $hg002_chr22_prefix $hg002_chr22_reads
-    snp_eval "GATK vs Gold - chr22" "$tmp_dir/faves/$hg002_chr22_prefix.faves.snps.bed" "$hg002_chr22_gold"
-
-    # WGA
     faves_pipeline $hg38_prefix $hg002_prefix $hg002_reads
-    snp_eval "GATK vs Gold" "$tmp_dir/faves/$hg002_prefix.faves.snps.bed" "$hg002_gold"
+fi
+
+# Evaluation
+if [ "$RUN_FVS_ECOLI" = "true" ]; then
+    snp_eval "GATK vs Gold - ecoli" "$tmp_dir/faves/$ecoli_sim_prefix.faves.snps.bed" "$ecoli_sim_gold"
+fi
+if [ "$RUN_FVS_DM6" = "true" ]; then
+    snp_eval "GATK vs Gold - dm6" "$tmp_dir/faves/$dm6_sim_prefix.faves.snps.bed" "$dm6_sim_gold"
+fi
+if [ "$RUN_FVS_HUMAN" = "true" ]; then
+    snp_eval "GATK vs Gold - hg002.chr22" "$tmp_dir/faves/$hg002_chr22_prefix.faves.snps.bed" "$hg002_chr22_gold"
+    snp_eval "GATK vs Gold - hg002" "$tmp_dir/faves/$hg002_prefix.faves.snps.bed" "$hg002_gold"
 fi
 
 # -----------------------------------------
@@ -198,17 +219,14 @@ fi
 # minimap2
 # -----------------------------------------
 # -----------------------------------------
-if [ "$RUN_MM2" = "true" ]; then
-    # ecoli
+if [ "$RUN_MM2_ECOLI" = "true" ]; then
     minimap2_pipeline $ecoli_prefix $ecoli_sim_prefix $ecoli_sim_reads
-
-    # fruit fly
+fi
+if [ "$RUN_MM2_DM6" = "true" ]; then
     minimap2_pipeline $dm6_prefix $dm6_sim_prefix $dm6_sim_reads
-
-    # CHROMOSOME 22
+fi
+if [ "$RUN_MM2_HUMAN" = "true" ]; then
     minimap2_pipeline $hg38_chr22_prefix $hg002_chr22_prefix $hg002_chr22_reads
-
-    # WGA
     minimap2_pipeline $hg38_prefix $hg002_prefix $hg002_reads
 fi
 
@@ -217,23 +235,25 @@ fi
 # GATK
 # -----------------------------------------
 # -----------------------------------------
-if [ "$RUN_GTK" = "true" ]; then
-    # ecoli
+if [ "$RUN_GTK_ECOLI" = "true" ]; then
     gatk_pipeline $ecoli_prefix $ecoli_sim_prefix
-
-    # fruit fly
+fi
+if [ "$RUN_GTK_DM6" = "true" ]; then
     gatk_pipeline $dm6_prefix $dm6_sim_prefix
-
-    # CHROMOSOME 22
+fi
+if [ "$RUN_GTK_HUMAN" = "true" ]; then
     gatk_pipeline $hg38_chr22_prefix $hg002_chr22_prefix
-
-    # WGA
     gatk_pipeline $hg38_prefix $hg002_prefix
+fi
 
-    # Print results
+if [ "$RUN_GTK_ECOLI" = "true" ]; then
     snp_eval "GATK vs Gold - ecoli" "$tmp_dir/faves/$ecoli_sim_prefix.mm2.gatk.snps.bed" "$ecoli_sim_gold"
+fi
+if [ "$RUN_GTK_DM6" = "true" ]; then
     snp_eval "GATK vs Gold - dm6" "$tmp_dir/faves/$dm6_sim_prefix.mm2.gatk.snps.bed" "$dm6_sim_gold"
-    snp_eval "GATK vs Gold - chr22" "$tmp_dir/faves/$hg002_chr22_prefix.mm2.gatk.snps.bed" "$hg002_chr22_gold"
+fi
+if [ "$RUN_GTK_HUMAN" = "true" ]; then
+    snp_eval "GATK vs Gold - hg002.chr22" "$tmp_dir/faves/$hg002_chr22_prefix.mm2.gatk.snps.bed" "$hg002_chr22_gold"
     snp_eval "GATK vs Gold - hg002" "$tmp_dir/faves/$hg002_prefix.mm2.gatk.snps.bed" "$hg002_gold"
 fi
 
@@ -242,13 +262,26 @@ fi
 # ebwt2InDel
 # -----------------------------------------
 # -----------------------------------------
-if [ "$RUN_E2I" = "true" ]; then
-    # CHROMOSOME 22
+if [ "$RUN_E2I_ECOLI" = "true" ]; then
+    ebwt2InDel_pipeline $ecoli_prefix $ecoli_sim_prefix $ecoli_sim_reads
+fi
+if [ "$RUN_E2I_DM6" = "true" ]; then
+    ebwt2InDel_pipeline $dm6_prefix $dm6_sim_prefix $dm6_sim_reads
+fi
+if [ "$RUN_E2I_HUMAN" = "true" ]; then
     ebwt2InDel_pipeline $hg38_chr22_prefix $hg002_chr22_prefix $hg002_chr22_reads
-    snp_eval "GATK vs Gold - chr22" "$tmp_dir/faves/$hg002_chr22_prefix.ebwt2InDel.5.snps.bed" "$hg002_chr22_gold"
-
-    # WGA
     ebwt2InDel_pipeline $hg38_prefix $hg002_prefix $hg002_reads
+fi
+
+# Evaluation
+if [ "$RUN_E2I_ECOLI" = "true" ]; then
+    snp_eval "GATK vs Gold - ecoli" "$tmp_dir/faves/$ecoli_sim_prefix.ebwt2InDel.5.snps.bed" "$ecoli_sim_gold"
+fi
+if [ "$RUN_E2I_DM6" = "true" ]; then
+    snp_eval "GATK vs Gold - dm6" "$tmp_dir/faves/$dm6_sim_prefix.ebwt2InDel.5.snps.bed" "$dm6_sim_gold"
+fi
+if [ "$RUN_E2I_HUMAN" = "true" ]; then
+    snp_eval "GATK vs Gold - hg002.chr22" "$tmp_dir/faves/$hg002_chr22_prefix.ebwt2InDel.5.snps.bed" "$hg002_chr22_gold"
     snp_eval "GATK vs Gold - hg002" "$tmp_dir/faves/$hg002_prefix.ebwt2InDel.5.snps.bed" "$hg002_gold"
 fi
 
