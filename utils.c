@@ -1,6 +1,8 @@
 #include "utils.h"
 
 
+#define abs_u64(x, y) (ref_span > read_span ? (ref_span - read_span) : (read_span - ref_span))
+
 static unsigned char seq_nt4_table[256] = {
 	0, 1, 2, 3,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
 	4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
@@ -98,47 +100,42 @@ int store_seqs(const char *path, ref_seq_t **seqs) {
 
 int banded_align_and_report(const char *ref, uint64_t ref_span, const char *read, uint64_t read_span, int read_strand, uint64_t ref_pos, uint64_t ref_id, var_bvec_t *variants) {
     
-    int ref_len = ref_span;
-    int read_len = read_span;
 
-    if (abs(ref_len - read_len) > BAND) return 0; // why bother?
+    if (abs_u64(ref_span, read_span) > BAND) return 0; // why bother?
 
-    char ref_buf[MAX_LEN];
     char read_buf[MAX_LEN];
 
-    // Strand normalization
-    memcpy(ref_buf, ref, ref_len);
-    
-    if (read_strand) reverse_complement(read, read_buf, read_len);
-    else memcpy(read_buf, read, read_len);
+    // Strand normalization    
+    if (read_strand) reverse_complement(read, read_buf, read_span);
+    else memcpy(read_buf, read, read_span);
 
     int dp[MAX_LEN + 1][MAX_LEN + 1];
     int bt[MAX_LEN + 1][MAX_LEN + 1];
 
     // init
-    for (int i = 0; i <= ref_len; i++)
-        for (int j = 0; j <= read_len; j++)
+    for (uint64_t i = 0; i <= ref_span; i++)
+        for (uint64_t j = 0; j <= read_span; j++)
             dp[i][j] = NEG_INF;
 
     // free leading gaps within band
-    for (int j = 0; j <= BAND && j <= read_len; j++)
+    for (uint64_t j = 0; j <= BAND && j <= read_span; j++)
         dp[0][j] = 0;
 
-    for (int i = 0; i <= BAND && i <= ref_len; i++)
+    for (uint64_t i = 0; i <= BAND && i <= ref_span; i++)
         dp[i][0] = 0;
 
     // DP
-    for (int i = 1; i <= ref_len; i++) {
+    for (uint64_t i = 1; i <= ref_span; i++) {
 
-        int j_start = (i - BAND > 1) ? i - BAND : 1;
-        int j_end   = (i + BAND < read_len) ? i + BAND : read_len;
+        uint64_t j_start = (i > 1 + BAND) ? i - BAND : 1;
+        uint64_t j_end   = (i + BAND < read_span) ? i + BAND : read_span;
 
-        for (int j = j_start; j <= j_end; j++) {
+        for (uint64_t j = j_start; j <= j_end; j++) {
 
             int best = NEG_INF, op = -1;
 
             // diagonal
-            int diag = dp[i-1][j-1] + ((ref_buf[i-1] & to_uppercase_mask) == (read_buf[j-1] & to_uppercase_mask) ? MATCH : MISMATCH);
+            int diag = dp[i-1][j-1] + (ref[i-1] == (read_buf[j-1] & to_uppercase_mask) ? MATCH : MISMATCH);
             best = diag; 
             op = 0; // diagonal movement
 
@@ -162,29 +159,29 @@ int banded_align_and_report(const char *ref, uint64_t ref_span, const char *read
 
     // traceback
     int best = NEG_INF;
-    int bi = ref_len, bj = read_len;
+    uint64_t bi = ref_span, bj = read_span;
 
     // last row
-    for (int j = 0; j <= read_len; j++) {
-        if (dp[ref_len][j] > best) {
-            best = dp[ref_len][j];
-            bi = ref_len;
+    for (uint64_t j = 0; j <= read_span; j++) {
+        if (dp[ref_span][j] > best) {
+            best = dp[ref_span][j];
+            bi = ref_span;
             bj = j;
         }
     }
 
     // last column
-    for (int i = 0; i <= ref_len; i++) {
-        if (dp[i][read_len] > best) {
-            best = dp[i][read_len];
+    for (uint64_t i = 0; i <= ref_span; i++) {
+        if (dp[i][read_span] > best) {
+            best = dp[i][read_span];
             bi = i;
-            bj = read_len;
+            bj = read_span;
         }
     }
 
     if (best < MIN_SCORE) return 0;
 
-    int i = bi, j = bj;
+    uint64_t i = bi, j = bj;
 
     int mismatches = 0;
 
@@ -192,9 +189,9 @@ int banded_align_and_report(const char *ref, uint64_t ref_span, const char *read
         int op = bt[i][j];
 
         if (op == 0) {
-            if ((ref_buf[i-1] & to_uppercase_mask) != (read_buf[j-1] & to_uppercase_mask)) {
+            if (ref[i-1] != (read_buf[j-1] & to_uppercase_mask)) {
                 mismatches++;
-                if (i-1 != 0 && j-1 != 0 && i != ref_len && j != read_len) {
+                if (i-1 != 0 && j-1 != 0 && i != ref_span && j != read_span) {
                     var_add(variants, __set_variation_bits(ref_id, ref_pos + i - 1, seq_nt4_table[(int)read_buf[j-1]]));
                 }
             }

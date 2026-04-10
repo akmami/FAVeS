@@ -131,13 +131,26 @@ void process_fasta(params_t *p, uint128_t **seeds, uint64_t *seeds_len, map32_t 
         int len = seq->seq.l;
 
         ((*seqs)[chrom_index]).chrom = (char *)malloc(len + 1);
-        memcpy(((*seqs)[chrom_index]).chrom, bases, len);
-        (*seqs)[chrom_index].chrom[len] = '\0';
+        char *dst = (*seqs)[chrom_index].chrom;
+        int i = 0;
+
+        const __m256i mask = _mm256_set1_epi8((char)to_uppercase_mask);
+
+        for (; i + 32 <= len; i += 32) {
+            __m256i v = _mm256_loadu_si256((__m256i*)(bases + i));
+            v = _mm256_and_si256(v, mask);
+            _mm256_storeu_si256((__m256i*)(dst + i), v);
+        }
+
+        for (; i < len; i++)
+            dst[i] = bases[i] & to_uppercase_mask;
+
+        dst[len] = '\0';
         all_seq_len += len;
 
         uint128_t *chr_seeds;
         uint64_t chr_seeds_len = 0;
-        chr_seeds_len = sketch_blend(bases, len, p->w, p->k, p->blend_bits, p->n_neighbors, chrom_index, &chr_seeds);
+        chr_seeds_len = sketch_blend(dst, len, p->w, p->k, p->blend_bits, p->n_neighbors, chrom_index, &chr_seeds);
         
         if (chr_seeds_len) {
             if (all_seeds_cap <= all_seeds_len + chr_seeds_len) {
@@ -177,8 +190,6 @@ void process_fasta(params_t *p, uint128_t **seeds, uint64_t *seeds_len, map32_t 
         exit(1);
     }
 
-    uint64_t total_seed_count = 0;
-
     for (uint64_t i = 0; i < all_seeds_len; i++) {
         uint64_t kmer = (uint64_t)__sketch_get_kmer(all_seeds[i]);
         khint_t k = map8_get(dup_map, kmer);
@@ -187,19 +198,13 @@ void process_fasta(params_t *p, uint128_t **seeds, uint64_t *seeds_len, map32_t 
             int absent;
             k = map8_put(dup_map, kmer, &absent);
             kh_val(dup_map, k) = 1;
-            total_seed_count++;
         } else {
             // seen before -> mark duplicate
             if (kh_val(dup_map, k) != 255) {
                 kh_val(dup_map, k) += 1;
             }
-            if (kh_val(dup_map, k) == __DEFAULT_UPPER_BOUND_FREQUENCY__) {
-                total_seed_count--;
-            }
         }
     }
-
-    fprintf(stderr, "[%s::seed] Number of total seeds upper bounded with %ld\n", __TOOL_SHORT_NAME__, total_seed_count);
 
     map32_t *temp_index_table = *index_table;
     uint64_t unique_seeds_len = 0;

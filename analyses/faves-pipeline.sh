@@ -24,15 +24,15 @@ ecoli_sim_prefix="ecoli_prefix"
 ecoli_sim_reads="ecoli.fastq.gz"
 ecoli_sim_gold="ecoli.bed"
 
-hg38_prefix="hg38_prefix"
-hg002_prefix="hg002_prefix"
-hg002_reads="hg002.fastq.gz"
-hg002_gold="HG002_GRCh38_1_22_v4.2.1_benchmark.bed"
-
 hg38_chr22_prefix="hg38_chr22_prefix"
 hg002_chr22_prefix="hg002_chr22_prefix"
 hg002_chr22_reads="hg002.chr22.fastq.gz"
 hg002_chr22_gold="HG002_GRCh38_22_v4.2.1_benchmark.bed"
+
+hg38_prefix="hg38_prefix"
+hg002_prefix="hg002_prefix"
+hg002_reads="hg002.fastq.gz"
+hg002_gold="HG002_GRCh38_1_22_v4.2.1_benchmark.bed"
 
 CONFIG_FILE="faves-config.sh"
 
@@ -40,6 +40,8 @@ if [[ -n "$CONFIG_FILE" && -f "$CONFIG_FILE" ]]; then
     echo "Loading config from $CONFIG_FILE"
     source "$CONFIG_FILE"
 fi
+
+GATK_ENV_ACTIVATED=0
 
 
 # -----------------------------------------
@@ -85,7 +87,7 @@ faves_pipeline() {
         -q $fastq \
         -t 64 \
         -o $tmp_dir/faves/$sample_prefix.faves.snps.bed \
-        -v 2> $tmp_dir/faves/$sample_prefix.log
+        -v 2> $tmp_dir/faves/$sample_prefix.faves.log
 }
 
 minimap2_pipeline() {
@@ -110,18 +112,25 @@ minimap2_pipeline() {
         -R '@RG\tID:1\tSM:hg002\tPL:ILLUMINA\tLB:lib1\tPU:unit1' \
         $ref_dir/$ref_prefix.fasta \
         $fastq \
-        -t 64 > $tmp_dir/$sample_prefix.mm2.sam 2> $tmp_dir/faves/$sample_prefix.log
+        -t 64 > $tmp_dir/$sample_prefix.mm2.sam 2> $tmp_dir/faves/$sample_prefix.mm2.log
 
-    /bin/time -v samtools sort $tmp_dir/$sample_prefix.mm2.sam > $tmp_dir/$sample_prefix.mm2.bam 2>> $tmp_dir/faves/$sample_prefix.log
+    /bin/time -v samtools sort $tmp_dir/$sample_prefix.mm2.sam > $tmp_dir/$sample_prefix.mm2.bam 2>> $tmp_dir/faves/$sample_prefix.mm2.log
 
     rm -f $tmp_dir/$sample_prefix.mm2.sam
 
-    /bin/time -v samtools index $tmp_dir/$sample_prefix.mm2.bam 2>> $tmp_dir/faves/$sample_prefix.log
+    /bin/time -v samtools index $tmp_dir/$sample_prefix.mm2.bam 2>> $tmp_dir/faves/$sample_prefix.mm2.log
 }
 
 gatk_pipeline() {
     local ref_prefix=$1
     local sample_prefix=$2
+
+    if ! command -v gatk >/dev/null 2>&1; then
+        echo "GATK not found, loading conda env..."
+        source /home/akmuhammet/scripts/activate_conda
+        conda activate gatk
+        GATK_ENV_ACTIVATED=1
+    fi
 
     echo "Running GATK $ref_prefix ..."
 
@@ -135,8 +144,10 @@ gatk_pipeline() {
         return
     fi
 
+    rm -f $tmp_dir/faves/$sample_prefix.gatk.log
+
     if [ ! -f  "~/data/reference/$ref_prefix.dict" ]; then 
-        gatk CreateSequenceDictionary -R $ref_dir/$ref_prefix.fasta -O $ref_dir/$ref_prefix.dict
+        gatk CreateSequenceDictionary -R $ref_dir/$ref_prefix.fasta -O $ref_dir/$ref_prefix.dict 2>> $tmp_dir/faves/$sample_prefix.gatk.log
     fi
 
     mkdir -p $tmp_dir/faves
@@ -145,14 +156,13 @@ gatk_pipeline() {
         --reference $ref_dir/$ref_prefix.fasta \
         --input $tmp_dir/$sample_prefix.mm2.bam \
         --output $tmp_dir/faves/$sample_prefix.mm2.gatk.vcf.gz \
-        --QUIET true \
-        --native-pair-hmm-threads 64 2>&1 $tmp_dir/faves/$sample_prefix.log
+        --native-pair-hmm-threads 64 2>> $tmp_dir/faves/$sample_prefix.gatk.log
     
     /bin/time -v gatk SelectVariants \
         -R $ref_dir/$ref_prefix.fasta \
         -V $tmp_dir/faves/$sample_prefix.mm2.gatk.vcf.gz \
         --select-type-to-include SNP \
-        -O $tmp_dir/faves/$sample_prefix.mm2.gatk.snps.vcf 2>> $tmp_dir/faves/$sample_prefix.log
+        -O $tmp_dir/faves/$sample_prefix.mm2.gatk.snps.vcf 2>> $tmp_dir/faves/$sample_prefix.gatk.log
 
     bcftools query -f '%CHROM\t%POS\t%ID\t%REF\t%ALT\n' $tmp_dir/faves/$sample_prefix.mm2.gatk.snps.vcf | \
         awk 'BEGIN{OFS="\t"}{start=$2-1; end=start+length($4); print $1,start,end,$3,$4,$5}' > $tmp_dir/faves/$sample_prefix.mm2.gatk.snps.bed
@@ -183,9 +193,6 @@ ebwt2InDel_pipeline() {
     filter_snp $tmp_dir/faves/$sample_prefix.ebwt2InDel.snp 5 > $tmp_dir/faves/$sample_prefix.ebwt2InDel.5.snp
 }
 
-load_conda
-conda activate gatk
-
 # -----------------------------------------
 # -----------------------------------------
 # FAVeS
@@ -204,14 +211,14 @@ fi
 
 # Evaluation
 if [ "$RUN_FVS_ECOLI" = "true" ]; then
-    snp_eval "GATK vs Gold - ecoli" "$tmp_dir/faves/$ecoli_sim_prefix.faves.snps.bed" "$ecoli_sim_gold"
+    snp_eval "FAVES vs Gold - ecoli" "$tmp_dir/faves/$ecoli_sim_prefix.faves.snps.bed" "$ecoli_sim_gold"
 fi
 if [ "$RUN_FVS_DM6" = "true" ]; then
-    snp_eval "GATK vs Gold - dm6" "$tmp_dir/faves/$dm6_sim_prefix.faves.snps.bed" "$dm6_sim_gold"
+    snp_eval "FAVES vs Gold - dm6" "$tmp_dir/faves/$dm6_sim_prefix.faves.snps.bed" "$dm6_sim_gold"
 fi
 if [ "$RUN_FVS_HUMAN" = "true" ]; then
-    snp_eval "GATK vs Gold - hg002.chr22" "$tmp_dir/faves/$hg002_chr22_prefix.faves.snps.bed" "$hg002_chr22_gold"
-    snp_eval "GATK vs Gold - hg002" "$tmp_dir/faves/$hg002_prefix.faves.snps.bed" "$hg002_gold"
+    snp_eval "FAVES vs Gold - hg002.chr22" "$tmp_dir/faves/$hg002_chr22_prefix.faves.snps.bed" "$hg002_chr22_gold"
+    snp_eval "FAVES vs Gold - hg002" "$tmp_dir/faves/$hg002_prefix.faves.snps.bed" "$hg002_gold"
 fi
 
 # -----------------------------------------
@@ -247,14 +254,14 @@ if [ "$RUN_GTK_HUMAN" = "true" ]; then
 fi
 
 if [ "$RUN_GTK_ECOLI" = "true" ]; then
-    snp_eval "GATK vs Gold - ecoli" "$tmp_dir/faves/$ecoli_sim_prefix.mm2.gatk.snps.bed" "$ecoli_sim_gold"
+    snp_eval "MM2 + GATK vs Gold - ecoli" "$tmp_dir/faves/$ecoli_sim_prefix.mm2.gatk.snps.bed" "$ecoli_sim_gold"
 fi
 if [ "$RUN_GTK_DM6" = "true" ]; then
-    snp_eval "GATK vs Gold - dm6" "$tmp_dir/faves/$dm6_sim_prefix.mm2.gatk.snps.bed" "$dm6_sim_gold"
+    snp_eval "MM2 + GATK vs Gold - dm6" "$tmp_dir/faves/$dm6_sim_prefix.mm2.gatk.snps.bed" "$dm6_sim_gold"
 fi
 if [ "$RUN_GTK_HUMAN" = "true" ]; then
-    snp_eval "GATK vs Gold - hg002.chr22" "$tmp_dir/faves/$hg002_chr22_prefix.mm2.gatk.snps.bed" "$hg002_chr22_gold"
-    snp_eval "GATK vs Gold - hg002" "$tmp_dir/faves/$hg002_prefix.mm2.gatk.snps.bed" "$hg002_gold"
+    snp_eval "MM2 + GATK vs Gold - hg002.chr22" "$tmp_dir/faves/$hg002_chr22_prefix.mm2.gatk.snps.bed" "$hg002_chr22_gold"
+    snp_eval "MM2 + GATK vs Gold - hg002" "$tmp_dir/faves/$hg002_prefix.mm2.gatk.snps.bed" "$hg002_gold"
 fi
 
 # -----------------------------------------
@@ -275,15 +282,18 @@ fi
 
 # Evaluation
 if [ "$RUN_E2I_ECOLI" = "true" ]; then
-    snp_eval "GATK vs Gold - ecoli" "$tmp_dir/faves/$ecoli_sim_prefix.ebwt2InDel.5.snps.bed" "$ecoli_sim_gold"
+    snp_eval "E2I vs Gold - ecoli" "$tmp_dir/faves/$ecoli_sim_prefix.ebwt2InDel.5.snps.bed" "$ecoli_sim_gold"
 fi
 if [ "$RUN_E2I_DM6" = "true" ]; then
-    snp_eval "GATK vs Gold - dm6" "$tmp_dir/faves/$dm6_sim_prefix.ebwt2InDel.5.snps.bed" "$dm6_sim_gold"
+    snp_eval "E2I vs Gold - dm6" "$tmp_dir/faves/$dm6_sim_prefix.ebwt2InDel.5.snps.bed" "$dm6_sim_gold"
 fi
 if [ "$RUN_E2I_HUMAN" = "true" ]; then
-    snp_eval "GATK vs Gold - hg002.chr22" "$tmp_dir/faves/$hg002_chr22_prefix.ebwt2InDel.5.snps.bed" "$hg002_chr22_gold"
-    snp_eval "GATK vs Gold - hg002" "$tmp_dir/faves/$hg002_prefix.ebwt2InDel.5.snps.bed" "$hg002_gold"
+    snp_eval "E2I vs Gold - hg002.chr22" "$tmp_dir/faves/$hg002_chr22_prefix.ebwt2InDel.5.snps.bed" "$hg002_chr22_gold"
+    snp_eval "E2I vs Gold - hg002" "$tmp_dir/faves/$hg002_prefix.ebwt2InDel.5.snps.bed" "$hg002_gold"
 fi
 
 # conda cleanup
-conda deactivate
+if [ "$GATK_ENV_ACTIVATED" -eq 1 ]; then
+    echo "Deactivating GATK conda env"
+    conda deactivate
+fi

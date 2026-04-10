@@ -33,7 +33,7 @@
 #define GAP         -3
 #define BAND        20     // +-10 bp band
 #define MAX_LEN     512   // max extension length
-#define NEG_INF     -100000000
+#define NEG_INF     -30000
 #define MIN_SCORE   128
 
 #define abs_diff(x, y) ((x) < (y) ? (y) - (x) : (x) - (y))
