@@ -4,7 +4,8 @@ OBJS := $(SRCS:.c=.o)
 CURRENT_DIR := $(shell pwd)
 
 CC := gcc
-CFLAGS := -O3 -mavx2 -msse4.1 -Wall -Wextra -Wpedantic
+WFA2_DIR := WFA2-lib
+CFLAGS := -O3 -mavx2 -msse4.1 -Wall -Wextra -Wpedantic -I $(WFA2_DIR)
 LDFLAGS := -lm -pthread -lz
 
 # ========================================
@@ -14,7 +15,7 @@ LDFLAGS := -lm -pthread -lz
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -L lib -lblend
+	$(CC) $(CFLAGS) -o $@ $^ -L lib -lblend -L $(WFA2_DIR)/lib -lwfa $(LDFLAGS)
 	rm -f $(OBJS)
 
 %.o: %.c

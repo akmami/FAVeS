@@ -90,6 +90,8 @@ typedef struct {
     uint64_t mismatch_count;    // overall
     uint64_t neighbour_count;   // span
     uint64_t all_seq_len;       // length of all seqeunces combined
+    uint64_t alignment_time_ns; // cumulative ns spent in banded_align_and_report (per thread)
+    uint64_t alignment_calls;   // number of banded_align_and_report invocations (per thread)
 } stats_t;
 
 // -----------------------------------------------------------

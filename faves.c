@@ -367,7 +367,7 @@ void process_records(params_t *p, map32_t *index_table, uint128_t *seeds, uint64
         }
     }
 
-    stats_t stats = (stats_t){0ULL, 0ULL, 0ULL, 0ULL, 0ULL, 0ULL, 0ULL, 0ULL};
+    stats_t stats = (stats_t){0ULL, 0ULL, 0ULL, 0ULL, 0ULL, 0ULL, 0ULL, 0ULL, 0ULL, 0ULL};
     for (int i = 0; i < p->n_threads; i++) {
         stats.countains_unique += ctx[i].p->stats.countains_unique;
         stats.only_non_unique += ctx[i].p->stats.only_non_unique;
@@ -377,8 +377,18 @@ void process_records(params_t *p, map32_t *index_table, uint128_t *seeds, uint64
         stats.mismatch_count += ctx[i].p->stats.mismatch_count;
         stats.neighbour_count += ctx[i].p->stats.neighbour_count;
         stats.all_seq_len += ctx[i].p->stats.all_seq_len;
+        stats.alignment_time_ns += ctx[i].p->stats.alignment_time_ns;
+        stats.alignment_calls += ctx[i].p->stats.alignment_calls;
         var_free(ctx[i].p->fv_variants);
         free(ctx[i].p);
+    }
+
+    {
+        double cumulative_s = stats.alignment_time_ns / 1e9;
+        double wall_avg_s = cumulative_s / (p->n_threads > 0 ? p->n_threads : 1);
+        double us_per_call = stats.alignment_calls ? (stats.alignment_time_ns / 1000.0) / stats.alignment_calls : 0.0;
+        fprintf(stderr, "[%s::time] alignment: cumulative %.3f s across %d threads (~%.3f s wall avg), %lu calls, %.3f us/call\n",
+                __TOOL_SHORT_NAME__, cumulative_s, p->n_threads, wall_avg_s, stats.alignment_calls, us_per_call);
     }
 
     int min_consensus = 0;
@@ -574,5 +584,8 @@ void *worker_process_record(void *arg) {
     ctx->p->stats.mismatch_count = mismatch_count;
     ctx->p->stats.neighbour_count = neighbour_count;
     ctx->p->stats.all_seq_len = all_seq_len;
+    ctx->p->stats.alignment_time_ns = get_alignment_time_ns();
+    ctx->p->stats.alignment_calls = get_alignment_calls();
+    release_thread_aligner();
     return NULL;
 }

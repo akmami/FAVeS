@@ -1,7 +1,43 @@
 #include "utils.h"
+#include <time.h>
+#include "wavefront/wavefront_align.h"
 
 
 #define abs_u64(x, y) (ref_span > read_span ? (ref_span - read_span) : (read_span - ref_span))
+
+static __thread uint64_t alignment_time_ns_tls = 0;
+static __thread uint64_t alignment_calls_tls = 0;
+static __thread wavefront_aligner_t *wf_aligner_tls = NULL;
+
+uint64_t get_alignment_time_ns(void) { return alignment_time_ns_tls; }
+uint64_t get_alignment_calls(void) { return alignment_calls_tls; }
+
+static wavefront_aligner_t *get_thread_aligner(void) {
+    if (wf_aligner_tls) return wf_aligner_tls;
+    wavefront_aligner_attr_t attr = wavefront_aligner_attr_default;
+    attr.distance_metric = gap_linear;
+    attr.linear_penalties.match = -MATCH;
+    attr.linear_penalties.mismatch = -MISMATCH;
+    attr.linear_penalties.indel = -GAP;
+    attr.alignment_scope = compute_alignment;
+    attr.alignment_form.span = alignment_endsfree;
+    attr.alignment_form.pattern_begin_free = BAND;
+    attr.alignment_form.pattern_end_free = BAND;
+    attr.alignment_form.text_begin_free = BAND;
+    attr.alignment_form.text_end_free = BAND;
+    attr.heuristic.strategy = wf_heuristic_banded_static;
+    attr.heuristic.min_k = -BAND;
+    attr.heuristic.max_k = +BAND;
+    wf_aligner_tls = wavefront_aligner_new(&attr);
+    return wf_aligner_tls;
+}
+
+void release_thread_aligner(void) {
+    if (wf_aligner_tls) {
+        wavefront_aligner_delete(wf_aligner_tls);
+        wf_aligner_tls = NULL;
+    }
+}
 
 static unsigned char seq_nt4_table[256] = {
 	0, 1, 2, 3,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
@@ -98,120 +134,78 @@ int store_seqs(const char *path, ref_seq_t **seqs) {
     return chrom_index;
 }
 
-int banded_align_and_report(const char *ref, uint64_t ref_span, const char *read, uint64_t read_span, int read_strand, uint64_t ref_pos, uint64_t ref_id, var_bvec_t *variants) {
-    
+static int banded_align_and_report_impl(const char *ref, uint64_t ref_span, const char *read, uint64_t read_span, int read_strand, uint64_t ref_pos, uint64_t ref_id, var_bvec_t *variants) {
 
     if (abs_u64(ref_span, read_span) > BAND) return 0; // why bother?
 
-    char read_buf[MAX_LEN];
-
-    // Strand normalization    
+    char read_buf[MAX_LEN] = {0};
     if (read_strand) reverse_complement(read, read_buf, read_span);
     else memcpy(read_buf, read, read_span);
+    for (uint64_t k = 0; k < read_span; k++) read_buf[k] &= to_uppercase_mask;
 
-    int dp[MAX_LEN + 1][MAX_LEN + 1];
-    int bt[MAX_LEN + 1][MAX_LEN + 1];
+    wavefront_aligner_t *wf = get_thread_aligner();
+    int status = wavefront_align(wf, ref, (int)ref_span, read_buf, (int)read_span);
+    if (status != WF_STATUS_ALG_COMPLETED) return 0;
 
-    // init
-    for (uint64_t i = 0; i <= ref_span; i++)
-        for (uint64_t j = 0; j <= read_span; j++)
-            dp[i][j] = NEG_INF;
+    cigar_t *cigar = wf->cigar;
+    char *ops = cigar->operations;
+    int begin = cigar->begin_offset;
+    int end   = cigar->end_offset;
 
-    // free leading gaps within band
-    for (uint64_t j = 0; j <= BAND && j <= read_span; j++)
-        dp[0][j] = 0;
+    
+    int matched_begin = begin;
+    while (matched_begin < end && ops[matched_begin] != 'M' && ops[matched_begin] != 'X') matched_begin++;
+    int matched_end = end;
+    while (matched_end > matched_begin && ops[matched_end - 1] != 'M' && ops[matched_end - 1] != 'X') matched_end--;
+    if (matched_begin == matched_end) return 0; // no matched region, nothing to score
 
-    for (uint64_t i = 0; i <= BAND && i <= ref_span; i++)
-        dp[i][0] = 0;
-
-    // DP
-    for (uint64_t i = 1; i <= ref_span; i++) {
-
-        uint64_t j_start = (i > 1 + BAND) ? i - BAND : 1;
-        uint64_t j_end   = (i + BAND < read_span) ? i + BAND : read_span;
-
-        for (uint64_t j = j_start; j <= j_end; j++) {
-
-            int best = NEG_INF, op = -1;
-
-            // diagonal
-            int diag = dp[i-1][j-1] + (ref[i-1] == (read_buf[j-1] & to_uppercase_mask) ? MATCH : MISMATCH);
-            best = diag; 
-            op = 0; // diagonal movement
-
-            int del = dp[i-1][j] + GAP;
-            if (del > best) {
-                best = del;
-                op = 1; // downward movement
-            }
-
-            // insertion
-            int ins = dp[i][j-1] + GAP;
-            if (ins > best) {
-                best = ins;
-                op = 2; // right movement
-            }
-
-            dp[i][j] = best;
-            bt[i][j] = op;
+    int original_score = 0;
+    for (int i = matched_begin; i < matched_end; i++) {
+        switch (ops[i]) {
+            case 'M': original_score += MATCH; break;
+            case 'X': original_score += MISMATCH; break;
+            case 'I':
+            case 'D': original_score += GAP; break;
+            default: break;
         }
     }
+    if (original_score < MIN_SCORE) return 0;
 
-    // traceback
-    int best = NEG_INF;
-    uint64_t bi = ref_span, bj = read_span;
-
-    // last row
-    for (uint64_t j = 0; j <= read_span; j++) {
-        if (dp[ref_span][j] > best) {
-            best = dp[ref_span][j];
-            bi = ref_span;
-            bj = j;
-        }
-    }
-
-    // last column
-    for (uint64_t i = 0; i <= ref_span; i++) {
-        if (dp[i][read_span] > best) {
-            best = dp[i][read_span];
-            bi = i;
-            bj = read_span;
-        }
-    }
-
-    if (best < MIN_SCORE) return 0;
-
-    uint64_t i = bi, j = bj;
-
+    // Walk CIGAR forward and replay the original mismatch-reporting logic.
+    // Original boundary check (in traceback): i-1 != 0 && j-1 != 0 && i != ref_span && j != read_span.
+    // In CIGAR-forward terms with pattern_pos = i-1 (pre-step), text_pos = j-1, this becomes:
+    //   pattern_pos != 0 && text_pos != 0 && pattern_pos != ref_span-1 && text_pos != read_span-1
+    int pattern_pos = 0, text_pos = 0;
     int mismatches = 0;
-
-    while (i > 0 && j > 0) {
-        int op = bt[i][j];
-
-        if (op == 0) {
-            if (ref[i-1] != (read_buf[j-1] & to_uppercase_mask)) {
-                mismatches++;
-                if (i-1 != 0 && j-1 != 0 && i != ref_span && j != read_span) {
-                    var_add(variants, __set_variation_bits(ref_id, ref_pos + i - 1, seq_nt4_table[(int)read_buf[j-1]]));
-                }
+    for (int i = begin; i < end; i++) {
+        char op = ops[i];
+        if (op == 'M') {
+            pattern_pos++; text_pos++;
+        } else if (op == 'X') {
+            mismatches++;
+            if (pattern_pos != 0 && text_pos != 0 &&
+                pattern_pos != (int)ref_span - 1 && text_pos != (int)read_span - 1) {
+                var_add(variants, __set_variation_bits(ref_id, ref_pos + pattern_pos, seq_nt4_table[(int)read_buf[text_pos]]));
             }
-            i--; j--;
-        }
-        else if (op == 1) {
-            // if (i-1 != 0 && j-1 != 0 && i != ref_len && j != read_len) {
-            //     // do nothing for indels at this point
-            // }
-            i--;
-        }
-        else {
-            // if (i-1 != 0 && j-1 != 0 && i != ref_len && j != read_len) {
-            //     // do nothing for indels at this point
-            // }
-            j--;
+            pattern_pos++; text_pos++;
+        } else if (op == 'I') {
+            text_pos++;
+        } else if (op == 'D') {
+            pattern_pos++;
         }
     }
 
     return mismatches;
+}
+
+int banded_align_and_report(const char *ref, uint64_t ref_span, const char *read, uint64_t read_span, int read_strand, uint64_t ref_pos, uint64_t ref_id, var_bvec_t *variants) {
+    struct timespec t0, t1;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    int r = banded_align_and_report_impl(ref, ref_span, read, read_span, read_strand, ref_pos, ref_id, variants);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    alignment_time_ns_tls += (uint64_t)(t1.tv_sec - t0.tv_sec) * 1000000000ULL + (uint64_t)(t1.tv_nsec - t0.tv_nsec);
+    alignment_calls_tls++;
+    return r;
 }
 
 void queue_init(job_queue_t *q, int capacity) {

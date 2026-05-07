@@ -49,10 +49,39 @@ GATK_ENV_ACTIVATED=0
 # Evaluation Callers
 # -----------------------------------------
 # -----------------------------------------
+# Portable replacement for `bedtools intersect -a A -b B [-wa -u | -v] | wc -l`.
+# mode=u counts entries in A that overlap ANY entry in B (deduplicated by line).
+# mode=v counts entries in A that overlap NO entry in B.
+# Half-open intervals [start, end), same convention as BED.
+bed_intersect_count () {
+    local mode=$1
+    local a=$2
+    local b=$3
+    awk -v mode="$mode" -F'\t' '
+        FNR == NR {
+            chr = $1
+            n[chr] = (chr in n ? n[chr] : 0) + 1
+            S[chr, n[chr]] = $2 + 0
+            E[chr, n[chr]] = $3 + 0
+            next
+        }
+        {
+            astart = $2 + 0; aend = $3 + 0
+            ov = 0; cnt = (($1 in n) ? n[$1] : 0)
+            for (k = 1; k <= cnt; k++) {
+                if (S[$1, k] < aend && E[$1, k] > astart) { ov = 1; break }
+            }
+            if ((mode == "u" && ov) || (mode == "v" && !ov)) c++
+        }
+        END { print c + 0 }
+    ' "$b" "$a"
+}
+
 snp_eval () {
     local message=$1
     local calls=$2
     local gold=$3
+
 
     local TP=$(bedtools intersect -a "$calls" -b "$gold" -wa -u | wc -l)
     local FP=$(bedtools intersect -a "$calls" -b "$gold" -v | wc -l)

@@ -1,4 +1,6 @@
 #include <stdlib.h>
+#include <stdio.h>
+#include <time.h>
 #include "struct_def.h"
 #include "opt_parser.h"
 #include "utils.h"
@@ -6,6 +8,9 @@
 
 
 int main(int argc, char **argv) {
+
+    struct timespec ts_start, ts_end;
+    clock_gettime(CLOCK_MONOTONIC, &ts_start);
 
     // parse arguments
     params_t p;
@@ -17,7 +22,7 @@ int main(int argc, char **argv) {
     uint64_t seeds_len;
     ref_seq_t *seqs;
     int seq_count = 0;
-    
+
     process_fasta(&p, &seeds, &seeds_len, &index_table, &seqs, &seq_count);
 
     // process reads and call variants. at the end, it will free seqeunces and index
@@ -25,6 +30,10 @@ int main(int argc, char **argv) {
 
     // cleanup
     free_seqs(&seqs, seq_count);
+
+    clock_gettime(CLOCK_MONOTONIC, &ts_end);
+    double total_s = (ts_end.tv_sec - ts_start.tv_sec) + (ts_end.tv_nsec - ts_start.tv_nsec) / 1e9;
+    fprintf(stderr, "[%s::time] total: %.3f s\n", __TOOL_SHORT_NAME__, total_s);
 
     return 0;
 }
