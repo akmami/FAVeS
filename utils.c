@@ -1,33 +1,32 @@
 #include "utils.h"
 #include <time.h>
-#include "wavefront/wavefront_align.h"
 
 
 #define abs_u64(x, y) (ref_span > read_span ? (ref_span - read_span) : (read_span - ref_span))
 
-static __thread uint64_t alignment_time_ns_tls = 0;
-static __thread uint64_t alignment_calls_tls = 0;
 static __thread wavefront_aligner_t *wf_aligner_tls = NULL;
-
-uint64_t get_alignment_time_ns(void) { return alignment_time_ns_tls; }
-uint64_t get_alignment_calls(void) { return alignment_calls_tls; }
 
 static wavefront_aligner_t *get_thread_aligner(void) {
     if (wf_aligner_tls) return wf_aligner_tls;
     wavefront_aligner_attr_t attr = wavefront_aligner_attr_default;
+    
     attr.distance_metric = gap_linear;
-    attr.linear_penalties.match = -MATCH;
-    attr.linear_penalties.mismatch = -MISMATCH;
-    attr.linear_penalties.indel = -GAP;
+
+    attr.linear_penalties.match = 0;
+    attr.linear_penalties.mismatch = MISMATCH;
+    attr.linear_penalties.indel = GAP;
+
     attr.alignment_scope = compute_alignment;
     attr.alignment_form.span = alignment_endsfree;
     attr.alignment_form.pattern_begin_free = BAND;
     attr.alignment_form.pattern_end_free = BAND;
     attr.alignment_form.text_begin_free = BAND;
     attr.alignment_form.text_end_free = BAND;
+
     attr.heuristic.strategy = wf_heuristic_banded_static;
     attr.heuristic.min_k = -BAND;
     attr.heuristic.max_k = +BAND;
+
     wf_aligner_tls = wavefront_aligner_new(&attr);
     return wf_aligner_tls;
 }
@@ -134,7 +133,7 @@ int store_seqs(const char *path, ref_seq_t **seqs) {
     return chrom_index;
 }
 
-static int banded_align_and_report_impl(const char *ref, uint64_t ref_span, const char *read, uint64_t read_span, int read_strand, uint64_t ref_pos, uint64_t ref_id, var_bvec_t *variants) {
+int banded_align_and_report(const char *ref, uint64_t ref_span, const char *read, uint64_t read_span, int read_strand, uint64_t ref_pos, uint64_t ref_id, var_bvec_t *variants) {
 
     if (abs_u64(ref_span, read_span) > BAND) return 0; // why bother?
 
@@ -147,37 +146,16 @@ static int banded_align_and_report_impl(const char *ref, uint64_t ref_span, cons
     int status = wavefront_align(wf, ref, (int)ref_span, read_buf, (int)read_span);
     if (status != WF_STATUS_ALG_COMPLETED) return 0;
 
-    cigar_t *cigar = wf->cigar;
-    char *ops = cigar->operations;
-    int begin = cigar->begin_offset;
-    int end   = cigar->end_offset;
-
-    
-    int matched_begin = begin;
-    while (matched_begin < end && ops[matched_begin] != 'M' && ops[matched_begin] != 'X') matched_begin++;
-    int matched_end = end;
-    while (matched_end > matched_begin && ops[matched_end - 1] != 'M' && ops[matched_end - 1] != 'X') matched_end--;
-    if (matched_begin == matched_end) return 0; // no matched region, nothing to score
-
-    int original_score = 0;
-    for (int i = matched_begin; i < matched_end; i++) {
-        switch (ops[i]) {
-            case 'M': original_score += MATCH; break;
-            case 'X': original_score += MISMATCH; break;
-            case 'I':
-            case 'D': original_score += GAP; break;
-            default: break;
-        }
+    if (wf->align_status.score > (int)(4 * MAX_U64(2, CEIL_PERCENT_U64(MAX_U64(read_span, ref_span), WFA_RATE_PERCENT)) + 3)) {
+        return 0;
     }
-    if (original_score < MIN_SCORE) return 0;
 
-    // Walk CIGAR forward and replay the original mismatch-reporting logic.
-    // Original boundary check (in traceback): i-1 != 0 && j-1 != 0 && i != ref_span && j != read_span.
-    // In CIGAR-forward terms with pattern_pos = i-1 (pre-step), text_pos = j-1, this becomes:
-    //   pattern_pos != 0 && text_pos != 0 && pattern_pos != ref_span-1 && text_pos != read_span-1
+    char *ops = wf->cigar->operations;
+    int end   = wf->cigar->end_offset;
+
     int pattern_pos = 0, text_pos = 0;
     int mismatches = 0;
-    for (int i = begin; i < end; i++) {
+    for (int i = wf->cigar->begin_offset; i < end; i++) {
         char op = ops[i];
         if (op == 'M') {
             pattern_pos++; text_pos++;
@@ -196,16 +174,6 @@ static int banded_align_and_report_impl(const char *ref, uint64_t ref_span, cons
     }
 
     return mismatches;
-}
-
-int banded_align_and_report(const char *ref, uint64_t ref_span, const char *read, uint64_t read_span, int read_strand, uint64_t ref_pos, uint64_t ref_id, var_bvec_t *variants) {
-    struct timespec t0, t1;
-    clock_gettime(CLOCK_MONOTONIC, &t0);
-    int r = banded_align_and_report_impl(ref, ref_span, read, read_span, read_strand, ref_pos, ref_id, variants);
-    clock_gettime(CLOCK_MONOTONIC, &t1);
-    alignment_time_ns_tls += (uint64_t)(t1.tv_sec - t0.tv_sec) * 1000000000ULL + (uint64_t)(t1.tv_nsec - t0.tv_nsec);
-    alignment_calls_tls++;
-    return r;
 }
 
 void queue_init(job_queue_t *q, int capacity) {

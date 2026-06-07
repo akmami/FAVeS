@@ -34,6 +34,7 @@ typedef struct {
  * @param kmer_size      k-mer size
  * @param only_symmetric include only symmetric kmers
  * @param reference_id   reference ID; will be embeded to minimizer struct
+ * @param minimizers     the array of minimizers being processed and found
  * 
  * @note kmer is encoded as:
  * 		minimizer.x = hash << 8 | span

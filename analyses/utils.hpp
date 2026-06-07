@@ -230,6 +230,20 @@ std::string format_double(double value, size_t precision = 2) {
     return ss.str();
 };
 
+std::string format_int_classic(int value) {
+    std::stringstream ss;
+    ss.imbue(std::locale::classic());
+    ss << std::fixed << value;
+    return ss.str();
+};
+
+std::string format_double_classic(double value, size_t precision = 2) {
+    std::stringstream ss;
+    ss.imbue(std::locale::classic());
+    ss << std::fixed << std::setprecision(precision) << value;
+    return ss.str();
+};
+
 double mean(int (&numbers)[DISTANCE_LENGTH], std::vector<uint64_t> numbersXL = {}) {
     double sum = 0;
     double count = 0;
