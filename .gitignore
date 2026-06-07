@@ -4,7 +4,6 @@ data
 out
 bin
 lib
-WFA2-lib
 
 sketch/*.tmp
 
