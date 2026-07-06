@@ -103,12 +103,7 @@ faBlend: check_fasta mkdir_bin mkdir_out blend
 	@rm -f ../out/fa-blend/$(BLEND)-output.txt ../out/fa-blend/tmp.$(BLEND).*.log
 	@echo "[" > ../out/fa-blend/$(BLEND)-output.txt
 	@parallel -j $$(nproc) \
-		'../bin/$(SEEDS) $(HG38_FASTA) {1} {2} {3} {4} \
-		> ../out/fa-blend/tmp.$(BLEND).{1}.{2}.{3}.{4}.log 2>&1' \
-		:::+ 21 15 \
-		:::+ 11 10 \
-		::: 32 38 50 \
-		::: 3 5 7
+		'../bin/$(SEEDS) $(HG38_FASTA) {1} {2} {3} {4} > ../out/fa-blend/tmp.$(BLEND).{1}.{2}.{3}.{4}.log 2>&1' :::+ 21 15 :::+ 11 10 ::: 32 38 50 ::: 3 5 7
 	@cat ../out/fa-blend/tmp.$(BLEND).*.log >> ../out/fa-blend/$(BLEND)-output.txt
 	@echo "]" >> ../out/fa-blend/$(BLEND)-output.txt
 	@rm -f ../out/fa-blend/tmp.$(BLEND).*.log
@@ -125,11 +120,8 @@ faMin: check_fasta mkdir_bin mkdir_out minimizer
 	@echo "Output -> ../out/fa-minimizer/$(MINIMIZER)-output.txt"
 	@rm -f ../out/fa-minimizer/$(MINIMIZER)-output.txt ../out/fa-minimizer/tmp.$(MINIMIZER).*.log
 	@echo "[" > ../out/fa-minimizer/$(MINIMIZER)-output.txt
-	@parallel -j $$(nproc) \
-		'../bin/$(SEEDS) $(HG38_FASTA) {1} {2} \
-		> ../out/fa-minimizer/tmp.$(MINIMIZER).{1}.{2}.log 2>&1' \
-		:::+ 21 15 \
-		:::+ 11 10
+	@parallel -j 2 --colsep ' ' \
+		'../bin/$(SEEDS) $(HG38_FASTA) {1} {2} > ../out/fa-minimizer/tmp.$(MINIMIZER).{1}.{2}.log 2>&1' ::: "21 11" "15 10"
 	@cat ../out/fa-minimizer/tmp.$(MINIMIZER).*.log >> ../out/fa-minimizer/$(MINIMIZER)-output.txt
 	@echo "]" >> ../out/fa-minimizer/$(MINIMIZER)-output.txt
 	@rm -f ../out/fa-minimizer/tmp.$(MINIMIZER).*.log
@@ -146,11 +138,8 @@ faSync: check_fasta mkdir_bin mkdir_out syncmer
 	@echo "Output -> ../out/fa-syncmer/$(SYNCMER)-output.txt"
 	@rm -f ../out/fa-syncmer/$(SYNCMER)-output.txt ../out/fa-syncmer/tmp.$(SYNCMER).*.log
 	@echo "[" > ../out/fa-syncmer/$(SYNCMER)-output.txt
-	@parallel -j $$(nproc) \
-		'../bin/$(SEEDS) $(HG38_FASTA) {1} {2} \
-		> ../out/fa-syncmer/tmp.$(SYNCMER).{1}.{2}.log 2>&1' \
-		:::+ 21 15 \
-		:::+ 11 10
+	@parallel -j 3 --colsep ' ' \
+		'../bin/$(SEEDS) $(HG38_FASTA) {1} {2} > ../out/fa-syncmer/tmp.$(SYNCMER).{1}.{2}.log 2>&1' ::: "21 10" "15 10" "15 5"
 	@cat ../out/fa-syncmer/tmp.$(SYNCMER).*.log >> ../out/fa-syncmer/$(SYNCMER)-output.txt
 	@echo "]" >> ../out/fa-syncmer/$(SYNCMER)-output.txt
 	@rm -f ../out/fa-syncmer/tmp.$(SYNCMER).*.log
@@ -184,12 +173,7 @@ errSim: mkdir_bin mkdir_out blend
 	@rm -f ../out/err-sim/$(SIMULATE)-output.txt ../out/err-sim/tmp.$(SIMULATE).*.log
 	@echo "[" > ../out/err-sim/$(SIMULATE)-output.txt
 	@parallel -j $$(nproc) \
-		'../bin/$(SIMULATE) {1} {2} {3} {4} \
-		> ../out/err-sim/tmp.$(SIMULATE).{1}.{2}.{3}.{4}.log 2>&1' \
-		:::+ 21 15 \
-		:::+ 11 10 \
-		::: 32 38 50 \
-		::: 3 5 7
+		'../bin/$(SIMULATE) {1} {2} {3} {4} > ../out/err-sim/tmp.$(SIMULATE).{1}.{2}.{3}.{4}.log 2>&1' :::+ 21 15 :::+ 11 10 ::: 32 38 50 ::: 3 5 7
 	@cat ../out/err-sim/tmp.$(SIMULATE).*.log >> ../out/err-sim/$(SIMULATE)-output.txt
 	@echo "]" >> ../out/err-sim/$(SIMULATE)-output.txt
 	@rm -f ../out/err-sim/tmp.$(SIMULATE).*.log

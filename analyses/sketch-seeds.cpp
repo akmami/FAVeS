@@ -84,7 +84,7 @@ void process(chr_info_t *info, std::string &sequence,
 #elif defined(MINIMIZER)
     seeds_len = sketch_minimizers(sequence.c_str(), sequence.length(), window, kmer_size, 1, chr_idx, &seeds);
 #elif defined(SYNCMER)
-	seeds_len = sketch_syncmers(sequence.c_str(), sequence.length(), smer_size, kmer_size, 1, chr_idx, &seeds);	
+	seeds_len = sketch_syncmers(sequence.c_str(), sequence.length(), smer_size, kmer_size, chr_idx, &seeds);	
 #elif defined(STROBEMER)
 	strobes_vector minstrobes = seq_to_minstrobes2(num_strobe, kmer_size, w_min, w_max, sequence, chr_idx);
 	seeds_len = minstrobes.size();
@@ -379,7 +379,10 @@ int main(int argc, char **argv) {
 	std::cout << '\t' << "\"k\": " << kmer_size  << "," << std::endl;
 	std::cout << '\t' << "\"s\": " << smer_size  << "," << std::endl;
 #elif defined(STROBEMER)
-
+	std::cout << '\t' << "\"n\": " 	   << num_strobe << "," << std::endl;
+	std::cout << '\t' << "\"k\": " 	   << kmer_size  << "," << std::endl;
+	std::cout << '\t' << "\"w_min\": " << w_min  	 << "," << std::endl;
+	std::cout << '\t' << "\"w_max\": " << w_max  	 << "," << std::endl;
 #endif
 
 	// Total Cores
