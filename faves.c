@@ -105,9 +105,17 @@ void process_fasta(params_t *p, uint128_t **seeds, uint64_t *seeds_len, map32_t 
     *chrom_count = store_seqs(p->fasta, seqs);
     *seeds_len = 0;
 
+    uint64_t total_gen_len = 0;
+
+    for(int i = 0; i < *chrom_count; i++) {
+        total_gen_len += (*seqs)[i].len;
+    }
+
+    if (total_gen_len == 0) total_gen_len = __DEFAULT_SKETCH_CAPACITY__;
+
     uint128_t *all_seeds;
     uint64_t all_seeds_len = 0;
-    uint64_t all_seeds_cap = __DEFAULT_SKETCH_CAPACITY__;
+    uint64_t all_seeds_cap = total_gen_len * 2.5 / (p->w + 1);
     uint64_t all_seq_len = 0;
 
     all_seeds = (uint128_t *)malloc(sizeof(uint128_t) * all_seeds_cap);
@@ -477,7 +485,7 @@ void *worker_process_record(void *arg) {
     ctx->p->fv_variants = var_init(__DEFAULT_VARIANT_CAPACITY__ / ctx->p->n_threads);
     if (!ctx->p->fv_variants) {
         fprintf(stderr, "Couldn't allocate variants array\n");
-        return NULL;
+        goto cleanup;
     }
 
     var_bvec_t *variants = ctx->p->fv_variants;
@@ -574,5 +582,8 @@ void *worker_process_record(void *arg) {
     ctx->p->stats.mismatch_count = mismatch_count;
     ctx->p->stats.neighbour_count = neighbour_count;
     ctx->p->stats.all_seq_len = all_seq_len;
+
+cleanup:
+    release_thread_aligner();
     return NULL;
 }

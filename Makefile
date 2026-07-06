@@ -4,7 +4,8 @@ OBJS := $(SRCS:.c=.o)
 CURRENT_DIR := $(shell pwd)
 
 CC := gcc
-CFLAGS := -O3 -mavx2 -msse4.1 -Wall -Wextra -Wpedantic
+WFA2_DIR := WFA2-lib
+CFLAGS := -O3 -mavx2 -msse4.1 -Wall -Wextra -Wpedantic -I $(WFA2_DIR)
 LDFLAGS := -lm -pthread -lz
 
 # ========================================
@@ -14,7 +15,7 @@ LDFLAGS := -lm -pthread -lz
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -L lib -lblend
+	$(CC) $(CFLAGS) -o $@ $^ -L lib -lblend -L $(WFA2_DIR)/lib -lwfa $(LDFLAGS)
 	rm -f $(OBJS)
 
 %.o: %.c
@@ -28,6 +29,7 @@ clean:
 	@echo "Cleaning"
 	rm -f $(OBJS)
 	rm -f $(TARGET)
+	cd $(WFA2_DIR) && make clean && cd ..
 
 blend: 
 	@mkdir -p lib
@@ -35,4 +37,19 @@ blend:
 	ar rcs lib/libblend.a blend.o
 	@rm -f blend.o
 
-install: clean blend $(TARGET)
+minimizer: 
+	@mkdir -p lib
+	gcc -O3 -mavx2 -msse4.1 -c sketch/minimizer.c -I minimizer
+	ar rcs lib/libminimizer.a minimizer.o
+	@rm -f minimizer.o
+
+syncmer: 
+	@mkdir -p lib
+	gcc -O3 -mavx2 -msse4.1 -c sketch/syncmer.c -I syncmer
+	ar rcs lib/libsyncmer.a syncmer.o
+	@rm -f syncmer.o
+
+wfa:
+	cd $(WFA2_DIR) && make && cd ..
+
+install: clean wfa blend $(TARGET)

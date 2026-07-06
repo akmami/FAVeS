@@ -1,7 +1,42 @@
 #include "utils.h"
+#include <time.h>
 
 
 #define abs_u64(x, y) (ref_span > read_span ? (ref_span - read_span) : (read_span - ref_span))
+
+static __thread wavefront_aligner_t *wf_aligner_tls = NULL;
+
+static wavefront_aligner_t *get_thread_aligner(void) {
+    if (wf_aligner_tls) return wf_aligner_tls;
+    wavefront_aligner_attr_t attr = wavefront_aligner_attr_default;
+    
+    attr.distance_metric = gap_linear;
+
+    attr.linear_penalties.match = 0;
+    attr.linear_penalties.mismatch = MISMATCH;
+    attr.linear_penalties.indel = GAP;
+
+    attr.alignment_scope = compute_alignment;
+    attr.alignment_form.span = alignment_endsfree;
+    attr.alignment_form.pattern_begin_free = BAND;
+    attr.alignment_form.pattern_end_free = BAND;
+    attr.alignment_form.text_begin_free = BAND;
+    attr.alignment_form.text_end_free = BAND;
+
+    attr.heuristic.strategy = wf_heuristic_banded_static;
+    attr.heuristic.min_k = -BAND;
+    attr.heuristic.max_k = +BAND;
+
+    wf_aligner_tls = wavefront_aligner_new(&attr);
+    return wf_aligner_tls;
+}
+
+void release_thread_aligner(void) {
+    if (wf_aligner_tls) {
+        wavefront_aligner_delete(wf_aligner_tls);
+        wf_aligner_tls = NULL;
+    }
+}
 
 static unsigned char seq_nt4_table[256] = {
 	0, 1, 2, 3,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
@@ -99,115 +134,42 @@ int store_seqs(const char *path, ref_seq_t **seqs) {
 }
 
 int banded_align_and_report(const char *ref, uint64_t ref_span, const char *read, uint64_t read_span, int read_strand, uint64_t ref_pos, uint64_t ref_id, var_bvec_t *variants) {
-    
 
     if (abs_u64(ref_span, read_span) > BAND) return 0; // why bother?
 
-    char read_buf[MAX_LEN];
-
-    // Strand normalization    
+    char read_buf[MAX_LEN] = {0};
     if (read_strand) reverse_complement(read, read_buf, read_span);
     else memcpy(read_buf, read, read_span);
+    for (uint64_t k = 0; k < read_span; k++) read_buf[k] &= to_uppercase_mask;
 
-    int dp[MAX_LEN + 1][MAX_LEN + 1];
-    int bt[MAX_LEN + 1][MAX_LEN + 1];
+    wavefront_aligner_t *wf = get_thread_aligner();
+    int status = wavefront_align(wf, ref, (int)ref_span, read_buf, (int)read_span);
+    if (status != WF_STATUS_ALG_COMPLETED) return 0;
 
-    // init
-    for (uint64_t i = 0; i <= ref_span; i++)
-        for (uint64_t j = 0; j <= read_span; j++)
-            dp[i][j] = NEG_INF;
-
-    // free leading gaps within band
-    for (uint64_t j = 0; j <= BAND && j <= read_span; j++)
-        dp[0][j] = 0;
-
-    for (uint64_t i = 0; i <= BAND && i <= ref_span; i++)
-        dp[i][0] = 0;
-
-    // DP
-    for (uint64_t i = 1; i <= ref_span; i++) {
-
-        uint64_t j_start = (i > 1 + BAND) ? i - BAND : 1;
-        uint64_t j_end   = (i + BAND < read_span) ? i + BAND : read_span;
-
-        for (uint64_t j = j_start; j <= j_end; j++) {
-
-            int best = NEG_INF, op = -1;
-
-            // diagonal
-            int diag = dp[i-1][j-1] + (ref[i-1] == (read_buf[j-1] & to_uppercase_mask) ? MATCH : MISMATCH);
-            best = diag; 
-            op = 0; // diagonal movement
-
-            int del = dp[i-1][j] + GAP;
-            if (del > best) {
-                best = del;
-                op = 1; // downward movement
-            }
-
-            // insertion
-            int ins = dp[i][j-1] + GAP;
-            if (ins > best) {
-                best = ins;
-                op = 2; // right movement
-            }
-
-            dp[i][j] = best;
-            bt[i][j] = op;
-        }
+    if (wf->align_status.score > (int)(4 * MAX_U64(2, CEIL_PERCENT_U64(MAX_U64(read_span, ref_span), WFA_RATE_PERCENT)) + 3)) {
+        return 0;
     }
 
-    // traceback
-    int best = NEG_INF;
-    uint64_t bi = ref_span, bj = read_span;
+    char *ops = wf->cigar->operations;
+    int end   = wf->cigar->end_offset;
 
-    // last row
-    for (uint64_t j = 0; j <= read_span; j++) {
-        if (dp[ref_span][j] > best) {
-            best = dp[ref_span][j];
-            bi = ref_span;
-            bj = j;
-        }
-    }
-
-    // last column
-    for (uint64_t i = 0; i <= ref_span; i++) {
-        if (dp[i][read_span] > best) {
-            best = dp[i][read_span];
-            bi = i;
-            bj = read_span;
-        }
-    }
-
-    if (best < MIN_SCORE) return 0;
-
-    uint64_t i = bi, j = bj;
-
+    int pattern_pos = 0, text_pos = 0;
     int mismatches = 0;
-
-    while (i > 0 && j > 0) {
-        int op = bt[i][j];
-
-        if (op == 0) {
-            if (ref[i-1] != (read_buf[j-1] & to_uppercase_mask)) {
-                mismatches++;
-                if (i-1 != 0 && j-1 != 0 && i != ref_span && j != read_span) {
-                    var_add(variants, __set_variation_bits(ref_id, ref_pos + i - 1, seq_nt4_table[(int)read_buf[j-1]]));
-                }
+    for (int i = wf->cigar->begin_offset; i < end; i++) {
+        char op = ops[i];
+        if (op == 'M') {
+            pattern_pos++; text_pos++;
+        } else if (op == 'X') {
+            mismatches++;
+            if (pattern_pos != 0 && text_pos != 0 &&
+                pattern_pos != (int)ref_span - 1 && text_pos != (int)read_span - 1) {
+                var_add(variants, __set_variation_bits(ref_id, ref_pos + pattern_pos, seq_nt4_table[(int)read_buf[text_pos]]));
             }
-            i--; j--;
-        }
-        else if (op == 1) {
-            // if (i-1 != 0 && j-1 != 0 && i != ref_len && j != read_len) {
-            //     // do nothing for indels at this point
-            // }
-            i--;
-        }
-        else {
-            // if (i-1 != 0 && j-1 != 0 && i != ref_len && j != read_len) {
-            //     // do nothing for indels at this point
-            // }
-            j--;
+            pattern_pos++; text_pos++;
+        } else if (op == 'I') {
+            text_pos++;
+        } else if (op == 'D') {
+            pattern_pos++;
         }
     }
 

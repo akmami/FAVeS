@@ -70,9 +70,10 @@ typedef struct {
 	(curr_gap).maximum = std::max((curr_gap).maximum, value);	\
 }
 
-void analyze(uint128_t *seeds, uint64_t len,
-             int &contiguous_counts,
-             int (&lengths)[DISTANCE_LENGTH],
+void analyze(uint128_t *seeds, 
+			 uint64_t len,
+             uint64_t &contiguous_counts,
+             uint64_t (&lengths)[DISTANCE_LENGTH],
 			 gap &length_gaps) {
 
 	if (len > 0) {
@@ -98,6 +99,11 @@ void analyze(uint128_t *seeds, uint64_t len,
 
 			// length
 			uint64_t length = current_end - current_start;
+
+			if (length >= DISTANCE_LENGTH) {
+				continue;
+			}
+			
 			lengths[length] += 1;
 
 			length_gaps.minimum = std::min(length_gaps.minimum, length);
@@ -106,12 +112,12 @@ void analyze(uint128_t *seeds, uint64_t len,
 	}
 };
 
-static inline uint64_t i64_low(uint64_t index, int radius) {
+static inline uint64_t i64_low(uint64_t index, uint64_t radius) {
 	if (radius <= index) return index - radius;
 	return 0;
 }
 
-static inline uint64_t i64_high(uint64_t index, int radius, uint64_t end) {
+static inline uint64_t i64_high(uint64_t index, uint64_t radius, uint64_t end) {
 	if (index + radius < end) return index + radius;
 	return end - 1;
 }
@@ -216,7 +222,7 @@ void relaxed_uniqueness_paint(chr_info_t *info,
 // ---------------------------------------------------------------
 // ---------------------------------------------------------------
 
-std::string format_int(int value) {
+std::string format_int(uint64_t value) {
     std::stringstream ss;
     ss.imbue(std::locale(""));
     ss << std::fixed << value;
@@ -230,7 +236,21 @@ std::string format_double(double value, size_t precision = 2) {
     return ss.str();
 };
 
-double mean(int (&numbers)[DISTANCE_LENGTH], std::vector<uint64_t> numbersXL = {}) {
+std::string format_int_classic(uint64_t value) {
+    std::stringstream ss;
+    ss.imbue(std::locale::classic());
+    ss << std::fixed << value;
+    return ss.str();
+};
+
+std::string format_double_classic(double value, size_t precision = 2) {
+    std::stringstream ss;
+    ss.imbue(std::locale::classic());
+    ss << std::fixed << std::setprecision(precision) << value;
+    return ss.str();
+};
+
+double mean(uint64_t (&numbers)[DISTANCE_LENGTH], std::vector<uint64_t> numbersXL = {}) {
     double sum = 0;
     double count = 0;
     for (size_t i = 0; i < DISTANCE_LENGTH; i++) {
@@ -244,7 +264,7 @@ double mean(int (&numbers)[DISTANCE_LENGTH], std::vector<uint64_t> numbersXL = {
     return sum / count;
 };
 
-double stdev(int (&numbers)[DISTANCE_LENGTH], std::vector<uint64_t> numbersXL = {}) {
+double stdev(uint64_t (&numbers)[DISTANCE_LENGTH], std::vector<uint64_t> numbersXL = {}) {
     double mean_value = mean(numbers, numbersXL);
     double count = 0;
     for (size_t i = 0; i < DISTANCE_LENGTH; i++) {

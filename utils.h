@@ -5,7 +5,10 @@
 #include <stdio.h>
 #include <string.h>
 #include "struct_def.h"
+#include "wavefront/wavefront_align.h"
 
+#define CEIL_PERCENT_U64(x, pct) (((x) * (pct) + 99ULL) / 100ULL)
+#define MAX_U64(a, b) ((uint64_t)((a) > (b) ? (a) : (b)))
 
 static inline char rc_base(char b) {
     switch (b) {
@@ -32,6 +35,8 @@ void free_seqs(ref_seq_t **seqs, int seq_len);
 int store_seqs(const char *path, ref_seq_t **seqs);
 
 int banded_align_and_report(const char *ref, uint64_t ref_span, const char *read, uint64_t read_span, int read_strand, uint64_t ref_pos, uint64_t ref_id, var_bvec_t *variants);
+
+void release_thread_aligner(void);
 
 // -------------------------------------------
 // --- THREADING HELPER FUNCS

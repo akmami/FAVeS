@@ -49,10 +49,39 @@ GATK_ENV_ACTIVATED=0
 # Evaluation Callers
 # -----------------------------------------
 # -----------------------------------------
+# Portable replacement for `bedtools intersect -a A -b B [-wa -u | -v] | wc -l`.
+# mode=u counts entries in A that overlap ANY entry in B (deduplicated by line).
+# mode=v counts entries in A that overlap NO entry in B.
+# Half-open intervals [start, end), same convention as BED.
+bed_intersect_count () {
+    local mode=$1
+    local a=$2
+    local b=$3
+    awk -v mode="$mode" -F'\t' '
+        FNR == NR {
+            chr = $1
+            n[chr] = (chr in n ? n[chr] : 0) + 1
+            S[chr, n[chr]] = $2 + 0
+            E[chr, n[chr]] = $3 + 0
+            next
+        }
+        {
+            astart = $2 + 0; aend = $3 + 0
+            ov = 0; cnt = (($1 in n) ? n[$1] : 0)
+            for (k = 1; k <= cnt; k++) {
+                if (S[$1, k] < aend && E[$1, k] > astart) { ov = 1; break }
+            }
+            if ((mode == "u" && ov) || (mode == "v" && !ov)) c++
+        }
+        END { print c + 0 }
+    ' "$b" "$a"
+}
+
 snp_eval () {
     local message=$1
     local calls=$2
     local gold=$3
+
 
     local TP=$(bedtools intersect -a "$calls" -b "$gold" -wa -u | wc -l)
     local FP=$(bedtools intersect -a "$calls" -b "$gold" -v | wc -l)
@@ -168,8 +197,6 @@ gatk_pipeline() {
         awk 'BEGIN{OFS="\t"}{start=$2-1; end=start+length($4); print $1,start,end,$3,$4,$5}' > $tmp_dir/faves/$sample_prefix.mm2.gatk.snps.bed
     
     rm -f $ref_dir/$ref_prefix.dict
-    rm -f $tmp_dir/faves/$sample_prefix.mm2.gatk.vcf.gz
-    rm -f $tmp_dir/faves/$sample_prefix.mm2.gatk.snps.vcf
 }
 
 ebwt2InDel_pipeline() {
@@ -200,24 +227,18 @@ ebwt2InDel_pipeline() {
 # -----------------------------------------
 if [ "$RUN_FVS_ECOLI" = "true" ]; then
     faves_pipeline $ecoli_prefix $ecoli_sim_prefix $ecoli_sim_reads
-fi
-if [ "$RUN_FVS_DM6" = "true" ]; then
-    faves_pipeline $dm6_prefix $dm6_sim_prefix $dm6_sim_reads
-fi
-if [ "$RUN_FVS_HUMAN" = "true" ]; then
-    faves_pipeline $hg38_chr22_prefix $hg002_chr22_prefix $hg002_chr22_reads
-    faves_pipeline $hg38_prefix $hg002_prefix $hg002_reads
-fi
-
-# Evaluation
-if [ "$RUN_FVS_ECOLI" = "true" ]; then
     snp_eval "FAVES vs Gold - ecoli" "$tmp_dir/faves/$ecoli_sim_prefix.faves.snps.bed" "$ecoli_sim_gold"
 fi
 if [ "$RUN_FVS_DM6" = "true" ]; then
+    faves_pipeline $dm6_prefix $dm6_sim_prefix $dm6_sim_reads
     snp_eval "FAVES vs Gold - dm6" "$tmp_dir/faves/$dm6_sim_prefix.faves.snps.bed" "$dm6_sim_gold"
 fi
-if [ "$RUN_FVS_HUMAN" = "true" ]; then
+if [ "$RUN_FVS_HUMAN_CHR22" = "true" ]; then
+    faves_pipeline $hg38_chr22_prefix $hg002_chr22_prefix $hg002_chr22_reads
     snp_eval "FAVES vs Gold - hg002.chr22" "$tmp_dir/faves/$hg002_chr22_prefix.faves.snps.bed" "$hg002_chr22_gold"
+fi
+if [ "$RUN_FVS_HUMAN" = "true" ]; then
+    faves_pipeline $hg38_prefix $hg002_prefix $hg002_reads
     snp_eval "FAVES vs Gold - hg002" "$tmp_dir/faves/$hg002_prefix.faves.snps.bed" "$hg002_gold"
 fi
 
@@ -232,8 +253,10 @@ fi
 if [ "$RUN_MM2_DM6" = "true" ]; then
     minimap2_pipeline $dm6_prefix $dm6_sim_prefix $dm6_sim_reads
 fi
-if [ "$RUN_MM2_HUMAN" = "true" ]; then
+if [ "$RUN_MM2_HUMAN_CHR22" = "true" ]; then
     minimap2_pipeline $hg38_chr22_prefix $hg002_chr22_prefix $hg002_chr22_reads
+fi
+if [ "$RUN_MM2_HUMAN" = "true" ]; then
     minimap2_pipeline $hg38_prefix $hg002_prefix $hg002_reads
 fi
 
@@ -244,23 +267,18 @@ fi
 # -----------------------------------------
 if [ "$RUN_GTK_ECOLI" = "true" ]; then
     gatk_pipeline $ecoli_prefix $ecoli_sim_prefix
-fi
-if [ "$RUN_GTK_DM6" = "true" ]; then
-    gatk_pipeline $dm6_prefix $dm6_sim_prefix
-fi
-if [ "$RUN_GTK_HUMAN" = "true" ]; then
-    gatk_pipeline $hg38_chr22_prefix $hg002_chr22_prefix
-    gatk_pipeline $hg38_prefix $hg002_prefix
-fi
-
-if [ "$RUN_GTK_ECOLI" = "true" ]; then
     snp_eval "MM2 + GATK vs Gold - ecoli" "$tmp_dir/faves/$ecoli_sim_prefix.mm2.gatk.snps.bed" "$ecoli_sim_gold"
 fi
 if [ "$RUN_GTK_DM6" = "true" ]; then
+    gatk_pipeline $dm6_prefix $dm6_sim_prefix
     snp_eval "MM2 + GATK vs Gold - dm6" "$tmp_dir/faves/$dm6_sim_prefix.mm2.gatk.snps.bed" "$dm6_sim_gold"
 fi
-if [ "$RUN_GTK_HUMAN" = "true" ]; then
+if [ "$RUN_GTK_HUMAN_CHR22" = "true" ]; then
+    gatk_pipeline $hg38_chr22_prefix $hg002_chr22_prefix
     snp_eval "MM2 + GATK vs Gold - hg002.chr22" "$tmp_dir/faves/$hg002_chr22_prefix.mm2.gatk.snps.bed" "$hg002_chr22_gold"
+fi
+if [ "$RUN_GTK_HUMAN" = "true" ]; then
+    gatk_pipeline $hg38_prefix $hg002_prefix
     snp_eval "MM2 + GATK vs Gold - hg002" "$tmp_dir/faves/$hg002_prefix.mm2.gatk.snps.bed" "$hg002_gold"
 fi
 
@@ -271,24 +289,18 @@ fi
 # -----------------------------------------
 if [ "$RUN_E2I_ECOLI" = "true" ]; then
     ebwt2InDel_pipeline $ecoli_prefix $ecoli_sim_prefix $ecoli_sim_reads
-fi
-if [ "$RUN_E2I_DM6" = "true" ]; then
-    ebwt2InDel_pipeline $dm6_prefix $dm6_sim_prefix $dm6_sim_reads
-fi
-if [ "$RUN_E2I_HUMAN" = "true" ]; then
-    ebwt2InDel_pipeline $hg38_chr22_prefix $hg002_chr22_prefix $hg002_chr22_reads
-    ebwt2InDel_pipeline $hg38_prefix $hg002_prefix $hg002_reads
-fi
-
-# Evaluation
-if [ "$RUN_E2I_ECOLI" = "true" ]; then
     snp_eval "E2I vs Gold - ecoli" "$tmp_dir/faves/$ecoli_sim_prefix.ebwt2InDel.5.snps.bed" "$ecoli_sim_gold"
 fi
 if [ "$RUN_E2I_DM6" = "true" ]; then
+    ebwt2InDel_pipeline $dm6_prefix $dm6_sim_prefix $dm6_sim_reads
     snp_eval "E2I vs Gold - dm6" "$tmp_dir/faves/$dm6_sim_prefix.ebwt2InDel.5.snps.bed" "$dm6_sim_gold"
 fi
-if [ "$RUN_E2I_HUMAN" = "true" ]; then
+if [ "$RUN_E2I_HUMAN_CHR22" = "true" ]; then
+    ebwt2InDel_pipeline $hg38_chr22_prefix $hg002_chr22_prefix $hg002_chr22_reads
     snp_eval "E2I vs Gold - hg002.chr22" "$tmp_dir/faves/$hg002_chr22_prefix.ebwt2InDel.5.snps.bed" "$hg002_chr22_gold"
+fi
+if [ "$RUN_E2I_HUMAN" = "true" ]; then
+    ebwt2InDel_pipeline $hg38_prefix $hg002_prefix $hg002_reads
     snp_eval "E2I vs Gold - hg002" "$tmp_dir/faves/$hg002_prefix.ebwt2InDel.5.snps.bed" "$hg002_gold"
 fi
 

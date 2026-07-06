@@ -8,33 +8,33 @@
 
 #define __TOOL_SHORT_NAME__ "fvs"
 
-#define __DEFAULT_BLEND_K__ 21
-#define __DEFAULT_BLEND_w__ 11
-#define __DEFAULT_BLEND_BITS__ 50
-#define __DEFAULT_BLEND_NEIGHBOR_NUMBER__ 5
-#define __DEFAULT_CONSENSUS_THRESHOLD__ 10
-#define __DEFAULT_CONSENSUS_FRAC_THRESHOLD__ 0.5
-#define __DEFAULT_RADIUS__ 4
-#define __DEFAULT_THREAD_NUMBER__ 4
-#define __DEFAULT_SKETCH_CAPACITY__ 40000000
-#define __DEFAULT_VARIANT_CAPACITY__ 10000000
-#define __DEFAULT_DISTANCE_THRESHOLD__ 200
-#define __DEFAULT_QUEUE_SIZE__ 1024
-#define __DEFAULT_BATCH_SIZE__ 512
-#define __DEFAULT_PROGRESS_INTERVAL__ 1
+#define __DEFAULT_BLEND_K__                     21
+#define __DEFAULT_BLEND_w__                     11
+#define __DEFAULT_BLEND_BITS__                  50
+#define __DEFAULT_BLEND_NEIGHBOR_NUMBER__       5
+#define __DEFAULT_CONSENSUS_THRESHOLD__         10
+#define __DEFAULT_CONSENSUS_FRAC_THRESHOLD__    0.5
+#define __DEFAULT_RADIUS__                      4
+#define __DEFAULT_THREAD_NUMBER__               4
+#define __DEFAULT_SKETCH_CAPACITY__             40000000
+#define __DEFAULT_VARIANT_CAPACITY__            10000000
+#define __DEFAULT_DISTANCE_THRESHOLD__          200
+#define __DEFAULT_QUEUE_SIZE__                  1024
+#define __DEFAULT_BATCH_SIZE__                  512
+#define __DEFAULT_PROGRESS_INTERVAL__           1
 
-#define __DEFAULT_UPPER_BOUND_FREQUENCY__ 2
+#define __DEFAULT_UPPER_BOUND_FREQUENCY__       2
 
-#define __DEFAULT_PROGRESS__ 0
-#define __DEFAULT_VERBOSE__ 0
+#define __DEFAULT_PROGRESS__    0
+#define __DEFAULT_VERBOSE__     0
 
-#define MATCH       2
-#define MISMATCH    -5
-#define GAP         -3
-#define BAND        20     // +-10 bp band
+// #define MATCH       2
+#define MISMATCH    4
+#define GAP         6
+#define BAND        20     // +-20 bp band
 #define MAX_LEN     512   // max extension length
-#define NEG_INF     -30000
 #define MIN_SCORE   128
+#define WFA_RATE_PERCENT 5ULL
 
 #define abs_diff(x, y) ((x) < (y) ? (y) - (x) : (x) - (y))
 
@@ -140,7 +140,7 @@ typedef struct {
 
 typedef struct {
     record_t *records;
-    int  len;
+    int len;
 } batch_records_t;
 
 typedef struct {
