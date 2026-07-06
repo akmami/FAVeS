@@ -37,18 +37,6 @@ blend:
 	ar rcs lib/libblend.a blend.o
 	@rm -f blend.o
 
-minimizer: 
-	@mkdir -p lib
-	gcc -O3 -mavx2 -msse4.1 -c sketch/minimizer.c -I minimizer
-	ar rcs lib/libminimizer.a minimizer.o
-	@rm -f minimizer.o
-
-syncmer: 
-	@mkdir -p lib
-	gcc -O3 -mavx2 -msse4.1 -c sketch/syncmer.c -I syncmer
-	ar rcs lib/libsyncmer.a syncmer.o
-	@rm -f syncmer.o
-
 wfa:
 	cd $(WFA2_DIR) && make && cd ..
 
