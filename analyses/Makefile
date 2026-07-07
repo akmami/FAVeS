@@ -11,6 +11,7 @@ BLEND := blend-seeds
 MINIMIZER := minimizer-seeds
 SYNCMER := syncmer-seeds
 STROBEMER := strobemer-seeds
+STROBEMER2 := strobemer2-seeds
 
 # Directories
 CURRENT_DIR := $(shell pwd)
@@ -78,6 +79,12 @@ strobemer:
 	g++ -O3 -mavx2 -msse4.1 -std=c++17 -c ../sketch/strobemer/strobemer.cpp -I strobemer
 	ar rcs ../lib/libstrobemer.a strobemer.o
 	@rm -f strobemer.o
+
+strobemer2:
+	@mkdir -p ../lib
+	g++ -O3 -mavx2 -msse4.1 -std=c++17 -c ../sketch/strobemer/strobemer2.cpp -I strobemer2
+	ar rcs ../lib/libstrobemer2.a strobemer2.o
+	@rm -f strobemer2.o
 
 clean:
 	@if [ -d "$(OUT_DIR)" ]; then \
@@ -158,6 +165,22 @@ faStrobe: check_fasta mkdir_bin mkdir_out strobemer
 	@echo "[" > ../out/fa-strobemer/$(STROBEMER)-output.txt
 	../bin/$(SEEDS) $(HG38_FASTA) 2 22 6 16 > ../out/fa-strobemer/$(STROBEMER)-output.txt 2>&1
 	@echo "]" >> ../out/fa-strobemer/$(STROBEMER)-output.txt
+
+######################################################################
+# STROBEMERS2
+######################################################################
+faStrobe2: check_fasta mkdir_bin mkdir_out strobemer2
+	$(GXX) $(CXXFLAGS) -mavx2 -msse4.1 -DSTROBEMER2 -c $(SEEDS)$(CXX) 
+	$(GXX) $(CXXFLAGS) -o $(SEEDS) $(SEEDS).o -L ../lib -lstrobemer2
+	@rm $(SEEDS).o
+	@mv $(SEEDS) $(EXECUTABLE_DIR)
+	@mkdir -p ../out/fa-strobemer2
+	@echo "Output -> ../out/fa-strobemer2/$(STROBEMER2)-output.txt"
+	@rm -f ../out/fa-strobemer2/$(STROBEMER2)-output.txt ../out/fa-strobemer2/tmp.$(STROBEMER2).*.log
+	@echo "[" > ../out/fa-strobemer2/$(STROBEMER2)-output.txt
+	../bin/$(SEEDS) $(HG38_FASTA) 250 17 > ../out/fa-strobemer2/$(STROBEMER2)-output.txt 2>&1
+	@echo "]" >> ../out/fa-strobemer2/$(STROBEMER2)-output.txt
+
 
 ######################################################################
 # BLEND ERROR TOLERANCE EXPERIMENT

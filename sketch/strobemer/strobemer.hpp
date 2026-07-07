@@ -5,8 +5,8 @@
 //  Created by Kristoffer Sahlin on 4/21/21.
 //
 
-#ifndef strobemer_hpp
-#define strobemer_hpp
+#ifndef __STROBEMER_HPP__
+#define __STROBEMER_HPP__
 
 #include <stdio.h>
 #include <string>

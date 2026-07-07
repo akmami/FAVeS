@@ -42,6 +42,20 @@
 #define __sketch_get_strand(kmer) 0
 
 using strobes_vector = std::vector<std::tuple<uint64_t, unsigned int, unsigned int, unsigned int, unsigned int>>;
+
+#elif defined(STROBEMER2)
+#include <vector>
+#include <cstring>
+#include "../sketch/strobemer/strobemer2.hpp"
+
+#define __sketch_get_kmer(kmer) ((kmer).x)
+#define __sketch_get_length(kmer) ((kmer).y & 0xFFFFFFFF)
+#define __sketch_get_reference_id(kmer) 0
+#define __sketch_get_index(kmer) ((kmer).y >> 32)
+#define __sketch_get_strand(kmer) 0
+
+using namespace strobemer2;
+
 #else 
 // dummy macros
 #define __sketch_get_kmer(kmer) 0
@@ -65,6 +79,8 @@ void process(chr_info_t *info, std::string &sequence,
 			 int smer_size, uint32_t kmer_size,
 #elif defined(STROBEMER)
 			 int num_strobe, int kmer_size, uint32_t w_min, uint32_t w_max,
+#elif defined(STROBEMER2)
+			 int read_len, int aux_len,
 #endif
 			 uint64_t &core_counts,
              uint64_t &contiguous_counts,
@@ -97,6 +113,33 @@ void process(chr_info_t *info, std::string &sequence,
 		
 		seeds[index].x = strobemer_hash;
 		seeds[index++].y = (strobe1_pos << 32) | strobe2_pos;
+	}
+#elif defined(STROBEMER2)
+	(void)chr_idx;
+    int k = IndexParameters::DEFAULT, s = IndexParameters::DEFAULT;
+    int l = IndexParameters::DEFAULT, u = IndexParameters::DEFAULT;
+    int c = IndexParameters::DEFAULT, m = IndexParameters::DEFAULT;
+
+	IndexParameters params = IndexParameters::from_read_length(read_len, k, s, l, u, c, m, aux_len);
+	const int kk = params.syncmer.k;
+
+	uint64_t seeds_cap = 1000000000;
+	seeds = (uint128_t *)malloc(sizeof(uint128_t) * seeds_cap);
+
+	RandstrobeGenerator gen(sequence, params.syncmer, params.randstrobe, RandstrobeHashMode::Classic);
+	Randstrobe rs;
+	while ((rs = gen.next()) != gen.end()) {
+		if (seeds_len == seeds_cap) {
+			seeds_cap *= 2;
+			uint128_t *tmp = (uint128_t *)realloc(seeds, sizeof(uint128_t) * seeds_cap);
+			if (!tmp) {
+				std::cout << "Realloc failed" << std::endl;
+				exit(EXIT_FAILURE);
+			}
+			seeds = tmp;
+		}
+		seeds[seeds_len].x = rs.hash;
+		seeds[seeds_len++].y = ((uint64_t)rs.strobe1_pos << 32) | (rs.strobe2_pos + kk - rs.strobe1_pos);
 	}
 #else 
 	printf("No method macro defined\n");
@@ -150,8 +193,13 @@ int main(int argc, char **argv) {
 		return -1;
 	}
 #elif defined(STROBEMER)
-	if (argc < 4) {
+	if (argc < 6) {
 		std::cerr << "Wrong format: " << argv[0] << " [infile] [num-strobe] [kmer-size] [w-min] [w-max]" << std::endl;
+		return -1;
+	}
+#elif defined(STROBEME2)
+	if (argc < 4) {
+		std::cerr << "Wrong format: " << argv[0] << " [infile] [read-len] [aux-len]" << std::endl;
 		return -1;
 	}
 #endif
@@ -194,6 +242,13 @@ int main(int argc, char **argv) {
     int w_max = atoi(argv[5]);
 
 	if (argc == 7) {
+		print_bed = 1;
+	}
+#elif defined(STROBEMER2)
+	int read_len = atoi(argv[2]);
+	int aux_len = atoi(argv[3]);
+
+	if (argc == 5) {
 		print_bed = 1;
 	}
 #endif
@@ -270,6 +325,8 @@ int main(int argc, char **argv) {
 			  				smer_size, kmer_size,
 #elif defined(STROBEMER)
 							num_strobe, kmer_size, w_min, w_max,
+#elif defined(STROBEMER2)
+							read_len, aux_len,
 #endif
 							core_counts, contiguous_counts, distinct_cores, 
 							durations, lengths, length_gaps, sizes, 
@@ -305,6 +362,8 @@ int main(int argc, char **argv) {
 			  		smer_size, kmer_size,
 #elif defined(STROBEMER)
 					num_strobe, kmer_size, w_min, w_max,
+#elif defined(STROBEMER2)
+					read_len, aux_len,
 #endif
 					core_counts, contiguous_counts, distinct_cores, 
 					durations, lengths, length_gaps, sizes, 
@@ -383,6 +442,9 @@ int main(int argc, char **argv) {
 	std::cout << '\t' << "\"k\": " 	   << kmer_size  << "," << std::endl;
 	std::cout << '\t' << "\"w_min\": " << w_min  	 << "," << std::endl;
 	std::cout << '\t' << "\"w_max\": " << w_max  	 << "," << std::endl;
+#elif defined(STROBEME2)
+	std::cout << '\t' << "\"r\": " << read_len << "," << std::endl;
+	std::cout << '\t' << "\"a\": " << aux_len  << "," << std::endl;
 #endif
 
 	// Total Cores
