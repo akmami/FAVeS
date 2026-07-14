@@ -3,6 +3,7 @@
 #include <zlib.h>
 #include "utils/khashl.h"
 #include "utils/kseq.h"
+#include "utils/ksort.h"
 #include "struct_def.h"
 #include "utils.h"
 #include "sketch/blend.h"

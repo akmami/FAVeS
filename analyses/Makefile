@@ -12,6 +12,7 @@ MINIMIZER := minimizer-seeds
 SYNCMER := syncmer-seeds
 STROBEMER := strobemer-seeds
 STROBEMER2 := strobemer2-seeds
+LCP := lcp-seeds
 
 # Directories
 CURRENT_DIR := $(shell pwd)
@@ -85,6 +86,12 @@ strobemer2:
 	g++ -O3 -mavx2 -msse4.1 -std=c++17 -c ../sketch/strobemer/strobemer2.cpp -I strobemer2
 	ar rcs ../lib/libstrobemer2.a strobemer2.o
 	@rm -f strobemer2.o
+
+lcp:
+	@mkdir -p ../lib
+	g++ -O3 -mavx2 -msse4.1 -std=c++17 -c ../sketch/lps.c -I lps
+	ar rcs ../lib/liblcp.a lps.o
+	@rm -f lps.o
 
 clean:
 	@if [ -d "$(OUT_DIR)" ]; then \
@@ -181,6 +188,23 @@ faStrobe2: check_fasta mkdir_bin mkdir_out strobemer2
 	../bin/$(SEEDS) $(HG38_FASTA) 250 17 > ../out/fa-strobemer2/$(STROBEMER2)-output.txt 2>&1
 	@echo "]" >> ../out/fa-strobemer2/$(STROBEMER2)-output.txt
 
+######################################################################
+# LCP
+######################################################################
+faLcp: check_fasta mkdir_bin mkdir_out lcp
+	$(GXX) $(CXXFLAGS) -mavx2 -msse4.1 -DLCP -c $(SEEDS)$(CXX) 
+	$(GXX) $(CXXFLAGS) -o $(SEEDS) $(SEEDS).o -L ../lib -llcp
+	@rm $(SEEDS).o
+	@mv $(SEEDS) $(EXECUTABLE_DIR)
+	@mkdir -p ../out/fa-lcp
+	@echo "Output -> ../out/fa-lcp/$(LCP)-output.txt"
+	@rm -f ../out/fa-lcp/$(LCP)-output.txt ../out/fa-lcp/tmp.$(LCP).*.log
+	@echo "[" > ../out/fa-lcp/$(LCP)-output.txt
+	@parallel -j 3 \
+		'../bin/$(SEEDS) $(HG38_FASTA) {1} 1 > ../out/fa-lcp/tmp.$(LCP).{1}.log 2>&1' :::+ 2 3 4
+	@cat ../out/fa-lcp/tmp.$(LCP).*.log >> ../out/fa-lcp/$(LCP)-output.txt
+	@echo "]" >> ../out/fa-lcp/$(LCP)-output.txt
+	@rm -f ../out/fa-lcp/tmp.$(LCP).*.log
 
 ######################################################################
 # BLEND ERROR TOLERANCE EXPERIMENT

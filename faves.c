@@ -1,18 +1,18 @@
 #include "faves.h"
 
+#define u64_key(x) (x)
 
+KRADIX_SORT_INIT(u64, uint64_t, u64_key, 8)
 KSEQ_INIT(gzFile, gzread)
+BVEC_INIT(uint64, uint64_t)
 
 static char int2var[5] = {'A', 'C', 'G', 'T', 'N'};
 
-BVEC_INIT(uint64, uint64_t)
 
 #define align_seeds(seqs, seq1_seed, seq, seq2_seed, mismatch_count) { \
-    /* uint64_t seq1_kmer = __sketch_get_kmer(seq1_seed); */ \
     uint64_t seq1_span  = __sketch_get_length(seq1_seed); \
     uint64_t seq1_index = __sketch_get_index(seq1_seed); \
     uint64_t seq1_id    = __sketch_get_reference_id(seq1_seed); \
-    /* int seq1_strand = __sketch_get_strand(seq1_seed); */ \
     uint64_t seq2_span  = __sketch_get_length(seq2_seed); \
     uint64_t seq2_index = __sketch_get_index(seq2_seed); \
     int seq2_strand     = __sketch_get_strand(seq2_seed); \
@@ -25,10 +25,8 @@ BVEC_INIT(uint64, uint64_t)
 }
 
 #define align_seeds_radius(seqs, seq1_seed_begin, seq1_seed_end, seq1_id, seq, seq2_seed_begin, seq2_seed_end, seq2_seed_strand, mismatch_count) { \
-    /* uint64_t seq1_kmer = __sketch_get_kmer(seq1_seed); */ \
     uint64_t seq1_index = __sketch_get_index(seq1_seed_begin); \
     uint64_t seq1_span  = __sketch_get_index(seq1_seed_end) + __sketch_get_length(seq1_seed_end) - seq1_index; \
-    /* int seq1_strand = __sketch_get_strand(seq1_seed); */ \
     uint64_t seq2_index = __sketch_get_index(seq2_seed_begin); \
     uint64_t seq2_span  = __sketch_get_index(seq2_seed_end) + __sketch_get_length(seq2_seed_end) - seq2_index; \
     /* get substrings */ \
@@ -40,7 +38,6 @@ BVEC_INIT(uint64, uint64_t)
 }
 
 #define align(seqs, seq1_seed, seq, seq_len, seq2_seed, mismatch_count) { \
-    /* uint64_t seq1_kmer = __sketch_get_kmer(seq1_seed); */ \
     int seq1_strand = __sketch_get_strand(seq1_seed); \
     int seq2_strand = __sketch_get_strand(seq2_seed); \
     /* align and report variants in alignment */ \
@@ -91,12 +88,6 @@ BVEC_INIT(uint64, uint64_t)
 static inline int cmp_variations(const void *a, const void *b) {
     uint64_t x = *(const uint64_t *)a;
     uint64_t y = *(const uint64_t *)b;
-    return (x > y) - (x < y);
-}
-
-static inline int cmp_seeds(const void *a, const void *b) {
-    const uint64_t x = __sketch_get_kmer(*(uint128_t *)a);
-    const uint64_t y = __sketch_get_kmer(*(uint128_t *)b);
     return (x > y) - (x < y);
 }
 
@@ -253,14 +244,6 @@ void process_fasta(params_t *p, uint128_t **seeds, uint64_t *seeds_len, map32_t 
 
 void process_records(params_t *p, map32_t *index_table, uint128_t *seeds, uint64_t seeds_len, ref_seq_t *seqs) {
 
-    gzFile fp = gzopen(p->fastq, "r");
-    if (!fp) {
-        fprintf(stderr, "[%s::err] cannot open reads file %s\n", __TOOL_SHORT_NAME__, p->fastq);
-        exit(1);
-    }
-
-    kseq_t *seq = kseq_init(fp);
-
     // init threads
     job_queue_t queue;
     queue_init(&queue, __DEFAULT_QUEUE_SIZE__);
@@ -293,41 +276,53 @@ void process_records(params_t *p, map32_t *index_table, uint128_t *seeds, uint64
 
     program_start = time(NULL);
 
-    while (kseq_read(seq) >= 0) {
+    for (int fq_idx = 0; fq_idx < p->n_fastq; fq_idx++) {
 
-        b->records[b->len].bases = strdup(seq->seq.s);
-        b->records[b->len].len  = seq->seq.l;
-        b->len++;
-
-        read_count++;
-
-        if (b->len == __DEFAULT_BATCH_SIZE__) {
-            time_t queue_start = time(NULL);
-            
-            queue_push(&queue, b);
-            b = batch_records_create(__DEFAULT_BATCH_SIZE__);
-
-            total_exec_sec += time(NULL) - queue_start;
+        gzFile fp = gzopen(p->fastq[fq_idx], "r");
+        if (!fp) {
+            fprintf(stderr, "[%s::err] cannot open reads file %s\n", __TOOL_SHORT_NAME__, p->fastq[fq_idx]);
+            exit(1);
         }
 
-        if (p->progress) {
-            time_t now = time(NULL);
-            if (now - last_print >= __DEFAULT_PROGRESS_INTERVAL__) {   // every 1 second
-                printf("\r[%s::live] Processed %ld records ...", __TOOL_SHORT_NAME__, read_count);
-                fflush(stdout);
-                last_print = now;
+        kseq_t *seq = kseq_init(fp);
+
+        while (kseq_read(seq) >= 0) {
+
+            b->records[b->len].bases = strdup(seq->seq.s);
+            b->records[b->len].len  = seq->seq.l;
+            b->len++;
+
+            read_count++;
+
+            if (b->len == __DEFAULT_BATCH_SIZE__) {
+                time_t queue_start = time(NULL);
+
+                queue_push(&queue, b);
+                b = batch_records_create(__DEFAULT_BATCH_SIZE__);
+
+                total_exec_sec += time(NULL) - queue_start;
+            }
+
+            if (p->progress) {
+                time_t now = time(NULL);
+                if (now - last_print >= __DEFAULT_PROGRESS_INTERVAL__) {   // every 1 second
+                    printf("\r[%s::live] Processed %ld records ...", __TOOL_SHORT_NAME__, read_count);
+                    fflush(stdout);
+                    last_print = now;
+                }
             }
         }
+
+        kseq_destroy(seq);
+        gzclose(fp);
     }
 
+    // flush the final (possibly partial) batch after all files are read
     if (b->len > 0) {
         queue_push(&queue, b);
     } else {
         batch_records_destroy(b);
     }
-
-    kseq_destroy(seq);
-    gzclose(fp);
 
     pthread_mutex_lock(&queue.lock);
     queue.done = 1;
@@ -408,7 +403,7 @@ void process_records(params_t *p, map32_t *index_table, uint128_t *seeds, uint64
 
     if (total_var_size) {
         // sort reported variants
-        qsort(variations, total_var_size, sizeof(variation_t), cmp_variations);
+        radix_sort_u64(variations, variations + total_var_size);
 
         // take consensus
         size_t i = 0;

@@ -65,7 +65,8 @@ typedef struct {
 
 typedef struct {
     char *fasta;
-    char *fastq;
+    char **fastq;
+    int n_fastq;
     char *bed;
     int k;
     int w;

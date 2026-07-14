@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <string>
 
+
 #ifdef BLEND
 #include "../sketch/blend.h"
 
@@ -56,6 +57,18 @@ using strobes_vector = std::vector<std::tuple<uint64_t, unsigned int, unsigned i
 
 using namespace strobemer2;
 
+#elif defined(LCP)
+#include <vector>
+#include <cstring>
+#include "../sketch/lps.h"
+
+#define __sketch_get_kmer(kmer) ((kmer).x)
+#define __sketch_get_length(kmer) ((kmer).y & 0xFFFFFFFF)
+#define __sketch_get_reference_id(kmer) 0
+#define __sketch_get_index(kmer) ((kmer).y >> 32)
+#define __sketch_get_strand(kmer) 0
+
+
 #else 
 // dummy macros
 #define __sketch_get_kmer(kmer) 0
@@ -81,6 +94,8 @@ void process(chr_info_t *info, std::string &sequence,
 			 int num_strobe, int kmer_size, uint32_t w_min, uint32_t w_max,
 #elif defined(STROBEMER2)
 			 int read_len, int aux_len,
+#elif defined(LCP)
+			 int lcp_level, int dct_count,
 #endif
 			 uint64_t &core_counts,
              uint64_t &contiguous_counts,
@@ -140,6 +155,16 @@ void process(chr_info_t *info, std::string &sequence,
 		}
 		seeds[seeds_len].x = rs.hash;
 		seeds[seeds_len++].y = ((uint64_t)rs.strobe1_pos << 32) | (rs.strobe2_pos + kk - rs.strobe1_pos);
+	}
+#elif defined(LCP)
+	(void)chr_idx;
+	struct lps lps_str;
+	init_lps(&lps_str, sequence.c_str(), sequence.size());
+	lps_deepen_dct_iters(&lps_str, lcp_level, dct_count);
+	seeds = (uint128_t *)malloc(sizeof(uint128_t) * lps_str.size);
+	for (int i = 0; i < lps_str.size; i++) {
+		seeds[seeds_len].x = lps_str.cores[i].label;
+		seeds[seeds_len++].y = ((uint64_t)lps_str.cores[i].start << 32) | ((uint64_t)lps_str.cores[i].end - (uint64_t)lps_str.cores[i].start);
 	}
 #else 
 	printf("No method macro defined\n");
@@ -202,6 +227,11 @@ int main(int argc, char **argv) {
 		std::cerr << "Wrong format: " << argv[0] << " [infile] [read-len] [aux-len]" << std::endl;
 		return -1;
 	}
+#elif defined(LCP)
+	if (argc < 4) {
+		std::cerr << "Wrong format: " << argv[0] << " [infile] [lcp-level] [dct-count]" << std::endl;
+		return -1;
+	}
 #endif
 
 	std::ifstream input(argv[1]);
@@ -247,6 +277,13 @@ int main(int argc, char **argv) {
 #elif defined(STROBEMER2)
 	int read_len = atoi(argv[2]);
 	int aux_len = atoi(argv[3]);
+
+	if (argc == 5) {
+		print_bed = 1;
+	}
+#elif defined(LCP)
+	int lcp_level = atoi(argv[2]);
+	int dct_count = atoi(argv[3]);
 
 	if (argc == 5) {
 		print_bed = 1;
@@ -327,6 +364,8 @@ int main(int argc, char **argv) {
 							num_strobe, kmer_size, w_min, w_max,
 #elif defined(STROBEMER2)
 							read_len, aux_len,
+#elif defined(LCP)
+							lcp_level, dct_count,
 #endif
 							core_counts, contiguous_counts, distinct_cores, 
 							durations, lengths, length_gaps, sizes, 
@@ -364,6 +403,8 @@ int main(int argc, char **argv) {
 					num_strobe, kmer_size, w_min, w_max,
 #elif defined(STROBEMER2)
 					read_len, aux_len,
+#elif defined(LCP)
+					lcp_level, dct_count,
 #endif
 					core_counts, contiguous_counts, distinct_cores, 
 					durations, lengths, length_gaps, sizes, 
@@ -445,6 +486,9 @@ int main(int argc, char **argv) {
 #elif defined(STROBEME2)
 	std::cout << '\t' << "\"r\": " << read_len << "," << std::endl;
 	std::cout << '\t' << "\"a\": " << aux_len  << "," << std::endl;
+#elif defined(LCP)
+	std::cout << '\t' << "\"l\": " << lcp_level << "," << std::endl;
+	std::cout << '\t' << "\"d\": " << dct_count  << "," << std::endl;
 #endif
 
 	// Total Cores

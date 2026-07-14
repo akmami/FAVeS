@@ -29,6 +29,8 @@ void print_usage(const char *prog) {
 }
 
 void init_params(params_t *p) {
+    p->fastq = NULL;
+    p->n_fastq = 0;
     p->k = __DEFAULT_BLEND_K__;
     p->w = __DEFAULT_BLEND_w__;
     p->blend_bits = __DEFAULT_BLEND_BITS__;
@@ -76,10 +78,36 @@ void parse_args(int argc, char **argv, params_t *p) {
             p->fasta = optarg;
             is_f_set = 1;
             break;
-        case 'q':
-            p->fastq = optarg;
+        case 'q': {
+            /* collect all fastq files following -q: the first one (optarg)
+               plus every subsequent argument until the next option or the
+               end of the argument list */
+            int extra = 0;
+            while (optind + extra < argc && argv[optind + extra][0] != '-') {
+                extra++;
+            }
+
+            /* if -q was already given, drop the previous array (last wins) */
+            if (p->fastq) {
+                free(p->fastq);
+            }
+
+            p->n_fastq = 1 + extra;
+            p->fastq = malloc(sizeof(char *) * p->n_fastq);
+            if (!p->fastq) {
+                fprintf(stderr, "[%s::err] out of memory allocating fastq list\n", __TOOL_SHORT_NAME__);
+                exit(1);
+            }
+
+            p->fastq[0] = optarg;
+            for (int j = 0; j < extra; j++) {
+                p->fastq[1 + j] = argv[optind + j];
+            }
+            optind += extra;   /* advance getopt past the consumed files */
+
             is_q_set = 1;
             break;
+        }
         case 'o':
             p->bed = optarg;
             is_o_set = 1;
@@ -159,9 +187,11 @@ void parse_args(int argc, char **argv, params_t *p) {
         exit(1);
     }
 
-    if (!file_exists(p->fastq)) {
-        fprintf(stderr, "[%s::err] fastq file does not exists (-q <file>)\n", __TOOL_SHORT_NAME__);
-        exit(1);
+    for (int i = 0; i < p->n_fastq; i++) {
+        if (!file_exists(p->fastq[i])) {
+            fprintf(stderr, "[%s::err] fastq file does not exists (%s)\n", __TOOL_SHORT_NAME__, p->fastq[i]);
+            exit(1);
+        }
     }
 
     if (p->n_threads <= 0 || 1024 < p->n_threads) {
@@ -178,13 +208,13 @@ void parse_args(int argc, char **argv, params_t *p) {
     }
 
     if (p->verbose) {
+        fprintf(stderr, "[%s::args] fa: %s\n", __TOOL_SHORT_NAME__, p->fasta);
+        for (int i = 0; i < p->n_fastq; i++) {
+            fprintf(stderr, "[%s::args] fq[%d]: %s\n", __TOOL_SHORT_NAME__, i, p->fastq[i]);
+        }
         fprintf(stderr,
-            "[%s::args] fa: %s\n"
-            "[%s::args] fq: %s\n"
             "[%s::args] k: %d, w: %d, b: %d, n: %d, r: %d, %c: %0.2f, t: %d\n",
-            __TOOL_SHORT_NAME__, p->fasta, 
-            __TOOL_SHORT_NAME__, p->fastq, 
-            __TOOL_SHORT_NAME__, p->k, p->w, p->blend_bits, p->n_neighbors, p->radius, 
+            __TOOL_SHORT_NAME__, p->k, p->w, p->blend_bits, p->n_neighbors, p->radius,
             p->use_consensus_frac ? 'd' : 'c',
             p->use_consensus_frac ? p->min_consensus_frac : p->min_consensus,
             p->n_threads

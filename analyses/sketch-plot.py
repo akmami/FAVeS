@@ -17,7 +17,7 @@ import matplotlib.lines as mlines
 OUT_DIR = Path("../out")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-PARAM_KEYS = ["k", "w", "s", "b", "n", "w_min", "w_max"]
+PARAM_KEYS = ["k", "w", "s", "b", "n", "w_min", "w_max", "l", "d"]
 STYLE_KEYS = {"color", "style", "marker", "label"}
 
 METHOD_CONFIGS = [
@@ -47,6 +47,13 @@ METHOD_CONFIGS = [
         "path": "../out/fa-strobemer/strobemer-seeds-output.txt",
         "targets": [
             {"n": 2, "k": 22, "w_min": 6, "w_max": 16, "color": "#8E5A99", "style": "-"},
+        ],
+    },
+    {
+        "name": "LCP",
+        "path": "../out/fa-lcp/lcp-seeds-output.txt",
+        "targets": [
+            {"l": 4, "d": 1, "color": "#4C956C", "style": "-"},
         ],
     },
 ]
