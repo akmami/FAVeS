@@ -760,6 +760,42 @@ void init_lps4(struct lps *lps_ptr, const char *str, int len, int lcp_level, int
         lps_ptr->cores = (struct core*)realloc(lps_ptr->cores, lps_ptr->size * sizeof(struct core));
 }
 
+void init_lps_segmented(struct lps *lps_ptr, const char *str, int len, int lcp_level, int dct_count) {
+    lps_ptr->level = lcp_level;
+    lps_ptr->size  = 0;
+    int cap = (int)(len / CONSTANT_FACTOR) + 1;
+    lps_ptr->cores = (struct core *)malloc(cap * sizeof(struct core));
+    int idx = 0;
+
+    int i = 0;
+    while (i < len) {
+        // skip N / invalid run  -> this is the breakpoint
+        while (i < len && alphabet[(unsigned char)str[i]] == 4) i++;
+        if (i >= len) break;
+
+        int seg_start = i;
+        while (i < len && alphabet[(unsigned char)str[i]] != 4) i++;
+        int seg_len = i - seg_start;
+        if (seg_len < 3) continue;              // too short to hold any core
+
+        struct lps seg;
+        init_lps_offset(&seg, str + seg_start, seg_len, (uint64_t)seg_start);
+        lps_deepen_dct_iters(&seg, lcp_level, dct_count);
+
+        if (seg.size) {
+            memcpy(lps_ptr->cores + idx, seg.cores,
+                   seg.size * sizeof(struct core));
+            idx += seg.size;
+            lps_ptr->size += seg.size;
+        }
+        free(seg.cores);
+    }
+
+    if (lps_ptr->size)
+        lps_ptr->cores = (struct core *)realloc(
+            lps_ptr->cores, lps_ptr->size * sizeof(struct core));
+}
+
 void free_lps(struct lps *lps_ptr) {
     free(lps_ptr->cores);
     lps_ptr->size = 0;

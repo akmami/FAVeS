@@ -159,8 +159,7 @@ void process(chr_info_t *info, std::string &sequence,
 #elif defined(LCP)
 	(void)chr_idx;
 	struct lps lps_str;
-	init_lps(&lps_str, sequence.c_str(), sequence.size());
-	lps_deepen_dct_iters(&lps_str, lcp_level, dct_count);
+	init_lps_segmented(&lps_str, sequence.c_str(), sequence.size(), lcp_level, dct_count);
 	seeds = (uint128_t *)malloc(sizeof(uint128_t) * lps_str.size);
 	for (int i = 0; i < lps_str.size; i++) {
 		seeds[seeds_len].x = lps_str.cores[i].label;

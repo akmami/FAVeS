@@ -133,6 +133,26 @@ void init_lps3(struct lps *lps_ptr, FILE *in);
 void init_lps4(struct lps *lps_ptr, const char *str, int len, int lcp_level, int chunk_size);
 
 /**
+ * @brief Constructs an lps object from a string, breaking at invalid characters (N).
+ * The input is split into maximal segments of valid characters, delimited by runs
+ * of invalid characters (`alphabet[c] == 4`, i.e. 'N'/'n' and other non-ACGT symbols).
+ * Each segment is parsed and deepened to `lcp_level` independently, so that no core
+ * ever spans an invalid region and neither DCT nor higher-level parsing bridges across
+ * a breakpoint. The per-segment cores are concatenated into a single array, in sorted
+ * order, with indices kept in global (whole-string) coordinates.
+ *
+ * @param lps_ptr The `lps` object that will be initialized.
+ * @param str The input string to be parsed.
+ * @param len The length of the string to be parsed.
+ * @param lcp_level The target compression level to deepen each segment to.
+ * @param dct_count The number of DCT iterations to perform at each deepening step.
+ *
+ * @note Segments shorter than the minimum core width yield no cores and are skipped.
+ *       Coordinates are offset per segment so that `start`/`end` remain absolute.
+ */
+void init_lps_segmented(struct lps *lps_ptr, const char *str, int len, int lcp_level, int dct_count);
+
+/**
  * @brief Destructor for the lps object. Frees dynamically allocated memory for cores.
  */
 void free_lps(struct lps *lps_ptr);

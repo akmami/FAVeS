@@ -53,7 +53,7 @@ METHOD_CONFIGS = [
         "name": "LCP",
         "path": "../out/fa-lcp/lcp-seeds-output.txt",
         "targets": [
-            {"l": 4, "d": 1, "color": "#4C956C", "style": "-"},
+            {"l": 3, "d": 1, "color": "#4C956C", "style": "-"},
         ],
     },
 ]
