@@ -9,6 +9,66 @@ BVEC_INIT(uint64, uint64_t)
 static char int2var[5] = {'A', 'C', 'G', 'T', 'N'};
 
 
+// These expand to the inline decoders declared in struct_def.h and rely on a
+// `const sketch_args_t *sk` being in scope at every call site (it is, in
+// process_fasta and worker_process_record). The `x`-derived accessors take the
+// runtime layout, which compiles to the same shift/and a compile-time constant
+// would, so there is no per-seed dispatch overhead for BLEND/MINIMIZER/SYNCMER.
+#define __sketch_get_kmer(seed)          sketch_get_kmer((seed), sk)
+#define __sketch_get_length(seed)        sketch_get_length((seed), sk)
+#define __sketch_get_reference_id(seed)  sketch_get_reference_id((seed))
+#define __sketch_get_index(seed)         sketch_get_index((seed))
+#define __sketch_get_strand(seed)        sketch_get_strand((seed))
+
+// Pack LCP cores into the canonical uint128_t seed layout. LCP is the only
+// method that does not emit uint128_t records natively, so this one extra pass
+// (the "additional work" for LCP) happens here, at generation time.
+static uint64_t sketch_lcp_seeds(const char *str, int len, const sketch_args_t *sk, uint32_t ref_id, uint128_t **out) {
+    struct lps lps_str;
+    init_lps_segmented(&lps_str, str, len, sk->lcp_level, sk->dct_count);
+
+    uint64_t n = (lps_str.size > 0) ? (uint64_t)lps_str.size : 0;
+
+    uint128_t *seeds = (uint128_t *)malloc(sizeof(uint128_t) * (n ? n : 1));
+    if (!seeds) {
+        fprintf(stderr, "[%s::err] couldn't allocate lcp seeds\n", __TOOL_SHORT_NAME__);
+        exit(1);
+    }
+
+    const int shift      = sk->kmer_shift;
+    const uint64_t mask  = sk->span_mask;
+    const uint64_t ref   = (uint64_t)ref_id << 32;
+
+    for (int i = 0; i < lps_str.size; i++) {
+        uint64_t label = (uint64_t)lps_str.cores[i].label;
+        uint64_t start = (uint64_t)lps_str.cores[i].start;
+        uint64_t span  = (uint64_t)lps_str.cores[i].end - start;
+        seeds[i].x = (label << shift) | (span & mask);
+        seeds[i].y = ref | ((start & 0x7FFFFFFFULL) << 1); // strand always 0 for LCP
+    }
+
+    *out = seeds;
+    free_lps(&lps_str);
+    return n;
+}
+
+// Runtime dispatch to the selected sketching library. 
+static inline uint64_t generate_seeds(const sketch_args_t *sk, const char *str, int len, uint32_t ref_id, uint128_t **out) {
+    switch (sk->type) {
+        case SKETCH_BLEND:
+            return sketch_blend(str, len, sk->window_size, sk->kmer_size, sk->blend_bits, sk->n_neighbors, ref_id, out);
+        case SKETCH_MINIMIZER:
+            return sketch_minimizers(str, len, sk->window_size, sk->kmer_size, 1, ref_id, out);
+        case SKETCH_SYNCMER:
+            return sketch_syncmers(str, len, sk->smer_size, sk->kmer_size, ref_id, out);
+        case SKETCH_LCP:
+            return sketch_lcp_seeds(str, len, sk, ref_id, out);
+        default:
+            *out = NULL;
+            return 0;
+    }
+}
+
 #define align_seeds(seqs, seq1_seed, seq, seq2_seed, mismatch_count) { \
     uint64_t seq1_span  = __sketch_get_length(seq1_seed); \
     uint64_t seq1_index = __sketch_get_index(seq1_seed); \
@@ -93,6 +153,8 @@ static inline int cmp_variations(const void *a, const void *b) {
 
 void process_fasta(params_t *p, uint128_t **seeds, uint64_t *seeds_len, map32_t **index_table, ref_seq_t **seqs, int *chrom_count) {
 
+    const sketch_args_t *sk = &p->sketch;
+
     *chrom_count = store_seqs(p->fasta, seqs);
     *seeds_len = 0;
 
@@ -106,7 +168,7 @@ void process_fasta(params_t *p, uint128_t **seeds, uint64_t *seeds_len, map32_t 
 
     uint128_t *all_seeds;
     uint64_t all_seeds_len = 0;
-    uint64_t all_seeds_cap = total_gen_len * 2.5 / (p->w + 1);
+    uint64_t all_seeds_cap = total_gen_len * 2.5 / (p->sketch.window_size + 1);
     uint64_t all_seq_len = 0;
 
     all_seeds = (uint128_t *)malloc(sizeof(uint128_t) * all_seeds_cap);
@@ -149,8 +211,8 @@ void process_fasta(params_t *p, uint128_t **seeds, uint64_t *seeds_len, map32_t 
 
         uint128_t *chr_seeds;
         uint64_t chr_seeds_len = 0;
-        chr_seeds_len = sketch_blend(dst, len, p->w, p->k, p->blend_bits, p->n_neighbors, chrom_index, &chr_seeds);
-        
+        chr_seeds_len = generate_seeds(sk, dst, len, chrom_index, &chr_seeds);
+
         if (chr_seeds_len) {
             if (all_seeds_cap <= all_seeds_len + chr_seeds_len) {
                 while (all_seeds_cap <= all_seeds_len + chr_seeds_len) {
@@ -254,10 +316,7 @@ void process_records(params_t *p, map32_t *index_table, uint128_t *seeds, uint64
     for (int i = 0; i < p->n_threads; i++) {
         ctx[i].queue = &queue;
         ctx[i].p = malloc(sizeof(params_lite_t));
-        ctx[i].p->k = p->k;
-        ctx[i].p->w = p->w;
-        ctx[i].p->blend_bits = p->blend_bits;
-        ctx[i].p->n_neighbors = p->n_neighbors;
+        ctx[i].p->sketch = p->sketch;
         ctx[i].p->radius = p->radius;
         ctx[i].p->n_threads = p->n_threads;
         ctx[i].p->seqs = seqs;
@@ -463,10 +522,7 @@ void *worker_process_record(void *arg) {
 
     worker_ctx_t *ctx = (worker_ctx_t*)arg;
 
-    int w = ctx->p->w;
-    int k = ctx->p->k;
-    int blend_bits = ctx->p->blend_bits;
-    int n_neighbors = ctx->p->n_neighbors;
+    const sketch_args_t *sk = &ctx->p->sketch;
     int radius = ctx->p->radius;
     uint64_t all_seq_len = 0;
 
@@ -498,7 +554,7 @@ void *worker_process_record(void *arg) {
 
             uint128_t *temp_seeds;
             uint64_t temp_seeds_len = 0;
-            temp_seeds_len = sketch_blend(bases, len, w, k, blend_bits, n_neighbors, 0, &temp_seeds);
+            temp_seeds_len = generate_seeds(sk, bases, len, 0, &temp_seeds);
             int is_uniq_set = 0;
 
             for (uint64_t read_anchor_idx = 0; read_anchor_idx < temp_seeds_len; read_anchor_idx++) {

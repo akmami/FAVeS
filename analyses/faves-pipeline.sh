@@ -1,5 +1,4 @@
 tmp_dir=.
-ref_dir=.
 
 dm6_fasta="dm6.fasta"
 dm6_prefix="dm6"

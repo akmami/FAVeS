@@ -1,13 +1,17 @@
 #include <stdlib.h>
 #include <time.h>
 #include <zlib.h>
+#include <x86intrin.h>
 #include "utils/khashl.h"
 #include "utils/kseq.h"
 #include "utils/ksort.h"
 #include "struct_def.h"
 #include "utils.h"
+// sketches
 #include "sketch/blend.h"
-
+#include "sketch/minimizer.h"
+#include "sketch/syncmer.h"
+#include "sketch/lps.h"
 
 KHASHL_MAP_INIT(KH_LOCAL, map32_t, map32, uint64_t, uint32_t, kh_hash_uint64, kh_eq_generic)
 KHASHL_MAP_INIT(KH_LOCAL, map8_t, map8, uint64_t, uint8_t, kh_hash_uint64, kh_eq_generic)
