@@ -68,8 +68,24 @@ using namespace strobemer2;
 #define __sketch_get_index(kmer) ((kmer).y >> 32)
 #define __sketch_get_strand(kmer) 0
 
+#elif defined(KMER)
+#include "../sketch/kmer.h"
 
-#else 
+#define __sketch_get_kmer(kmer) _get_kmer(kmer)
+#define __sketch_get_length(kmer) _get_length(kmer)
+#define __sketch_get_reference_id(kmer) _get_reference_id(kmer)
+#define __sketch_get_index(kmer) _get_index(kmer)
+#define __sketch_get_strand(kmer) _get_strand(kmer)
+
+#elif defined(FRACMH)
+#include "../sketch/fracmh.h"
+
+#define __sketch_get_kmer(kmer) __fracmh_get_kmer(kmer)
+#define __sketch_get_length(kmer) __fracmh_get_length(kmer)
+#define __sketch_get_reference_id(kmer) __fracmh_get_reference_id(kmer)
+#define __sketch_get_index(kmer) __fracmh_get_index(kmer)
+#define __sketch_get_strand(kmer) __fracmh_get_strand(kmer)
+#else
 // dummy macros
 #define __sketch_get_kmer(kmer) 0
 #define __sketch_get_length(kmer) 0
@@ -96,6 +112,10 @@ void process(chr_info_t *info, std::string &sequence,
 			 int read_len, int aux_len,
 #elif defined(LCP)
 			 int lcp_level, int dct_count,
+#elif defined(KMER)
+			 int kmer_size,
+#elif defined(FRACMH)
+			 int kmer_size, uint32_t frac_mod,
 #endif
 			 uint64_t &core_counts,
              uint64_t &contiguous_counts,
@@ -165,7 +185,11 @@ void process(chr_info_t *info, std::string &sequence,
 		seeds[seeds_len].x = lps_str.cores[i].label;
 		seeds[seeds_len++].y = ((uint64_t)lps_str.cores[i].start << 32) | ((uint64_t)lps_str.cores[i].end - (uint64_t)lps_str.cores[i].start);
 	}
-#else 
+#elif defined(KMER)
+    seeds_len = sketch_kmers(sequence.c_str(), sequence.length(), kmer_size, chr_idx, &seeds);
+#elif defined(FRACMH)
+    seeds_len = sketch_fracmh(sequence.c_str(), sequence.length(), kmer_size, frac_mod, chr_idx, &seeds);
+#else
 	printf("No method macro defined\n");
 #endif
 	auto extraction_end = std::chrono::high_resolution_clock::now();
@@ -202,33 +226,43 @@ void process(chr_info_t *info, std::string &sequence,
 int main(int argc, char **argv) {
 
 #ifdef BLEND 
-	if (argc < 6) {
-		std::cerr << "Wrong format: " << argv[0] << " [infile] [kmer-size] [window] [blend-bits] [n-number]" << std::endl;
+	if (argc < 7) {
+		std::cerr << "Wrong format: " << argv[0] << " [infile] [shortname] [kmer-size] [window] [blend-bits] [n-number]" << std::endl;
 		return -1;
 	}
 #elif defined(MINIMIZER)
-	if (argc < 4) {
-		std::cerr << "Wrong format: " << argv[0] << " [infile] [kmer-size] [window]" << std::endl;
+	if (argc < 5) {
+		std::cerr << "Wrong format: " << argv[0] << " [infile] [shortname] [kmer-size] [window]" << std::endl;
 		return -1;
 	}
 #elif defined(SYNCMER)
-	if (argc < 4) {
-		std::cerr << "Wrong format: " << argv[0] << " [infile] [kmer-size] [smer-size]" << std::endl;
+	if (argc < 5) {
+		std::cerr << "Wrong format: " << argv[0] << " [infile] [shortname] [kmer-size] [smer-size]" << std::endl;
 		return -1;
 	}
 #elif defined(STROBEMER)
-	if (argc < 6) {
-		std::cerr << "Wrong format: " << argv[0] << " [infile] [num-strobe] [kmer-size] [w-min] [w-max]" << std::endl;
+	if (argc < 7) {
+		std::cerr << "Wrong format: " << argv[0] << " [infile] [shortname] [num-strobe] [kmer-size] [w-min] [w-max]" << std::endl;
 		return -1;
 	}
 #elif defined(STROBEME2)
-	if (argc < 4) {
-		std::cerr << "Wrong format: " << argv[0] << " [infile] [read-len] [aux-len]" << std::endl;
+	if (argc < 5) {
+		std::cerr << "Wrong format: " << argv[0] << " [infile] [shortname] [read-len] [aux-len]" << std::endl;
 		return -1;
 	}
 #elif defined(LCP)
+	if (argc < 5) {
+		std::cerr << "Wrong format: " << argv[0] << " [infile] [shortname] [lcp-level] [dct-count]" << std::endl;
+		return -1;
+	}
+#elif defined(KMER)
 	if (argc < 4) {
-		std::cerr << "Wrong format: " << argv[0] << " [infile] [lcp-level] [dct-count]" << std::endl;
+		std::cerr << "Wrong format: " << argv[0] << " [infile] [shortname] [kmer-size]" << std::endl;
+		return -1;
+	}
+#elif defined(FRACMH)
+	if (argc < 5) {
+		std::cerr << "Wrong format: " << argv[0] << " [infile] [shortname] [kmer-size] [frac-mod]" << std::endl;
 		return -1;
 	}
 #endif
@@ -240,51 +274,73 @@ int main(int argc, char **argv) {
 	}
 
 	int print_bed = 0;
+	char *shortname = NULL;
 
 #ifdef BLEND 
-    int kmer_size = atoi(argv[2]);
-    int window = atoi(argv[3]);
-	int blend_bits = atoi(argv[4]);
-	int n_number = atoi(argv[5]);
+	shortname = argv[2];
+    int kmer_size = atoi(argv[3]);
+    int window = atoi(argv[4]);
+	int blend_bits = atoi(argv[5]);
+	int n_number = atoi(argv[6]);
 
-	if (argc == 7) {
+	if (argc == 8) {
 		print_bed = 1;
 	}
 #elif defined(MINIMIZER)
-    int kmer_size = atoi(argv[2]);
-    int window = atoi(argv[3]);
+	shortname = argv[2];
+    int kmer_size = atoi(argv[3]);
+    int window = atoi(argv[4]);
 
-	if (argc == 5) {
+	if (argc == 6) {
 		print_bed = 1;
 	}
 #elif defined(SYNCMER)
-    int kmer_size = atoi(argv[2]);
-    int smer_size = atoi(argv[3]);
+	shortname = argv[2];
+    int kmer_size = atoi(argv[3]);
+    int smer_size = atoi(argv[4]);
 
-	if (argc == 5) {
+	if (argc == 6) {
 		print_bed = 1;
 	}
 #elif defined(STROBEMER)
-	int num_strobe = atoi(argv[2]);
-    int kmer_size = atoi(argv[3]);
-    int w_min = atoi(argv[4]);
-    int w_max = atoi(argv[5]);
+	shortname = argv[2];
+	int num_strobe = atoi(argv[3]);
+    int kmer_size = atoi(argv[4]);
+    int w_min = atoi(argv[5]);
+    int w_max = atoi(argv[6]);
 
-	if (argc == 7) {
+	if (argc == 8) {
 		print_bed = 1;
 	}
 #elif defined(STROBEMER2)
-	int read_len = atoi(argv[2]);
-	int aux_len = atoi(argv[3]);
+	shortname = argv[2];
+	int read_len = atoi(argv[3]);
+	int aux_len = atoi(argv[4]);
+
+	if (argc == 6) {
+		print_bed = 1;
+	}
+#elif defined(LCP)
+	shortname = argv[2];
+	int lcp_level = atoi(argv[3]);
+	int dct_count = atoi(argv[4]);
+
+	if (argc == 6) {
+		print_bed = 1;
+	}
+#elif defined(KMER)
+	shortname = argv[2];
+    int kmer_size = atoi(argv[3]);
 
 	if (argc == 5) {
 		print_bed = 1;
 	}
-#elif defined(LCP)
-	int lcp_level = atoi(argv[2]);
-	int dct_count = atoi(argv[3]);
+#elif defined(FRACMH)
+	shortname = argv[2];
+    int kmer_size = atoi(argv[3]);
+    uint32_t frac_mod = (uint32_t)atoi(argv[4]);
 
-	if (argc == 5) {
+	if (argc == 6) {
 		print_bed = 1;
 	}
 #endif
@@ -365,8 +421,12 @@ int main(int argc, char **argv) {
 							read_len, aux_len,
 #elif defined(LCP)
 							lcp_level, dct_count,
+#elif defined(KMER)
+							kmer_size,
+#elif defined(FRACMH)
+							kmer_size, frac_mod,
 #endif
-							core_counts, contiguous_counts, distinct_cores, 
+							core_counts, contiguous_counts, distinct_cores,
 							durations, lengths, length_gaps, sizes, 
 							g_info.chroms->size);
 
@@ -404,8 +464,12 @@ int main(int argc, char **argv) {
 					read_len, aux_len,
 #elif defined(LCP)
 					lcp_level, dct_count,
+#elif defined(KMER)
+					kmer_size,
+#elif defined(FRACMH)
+					kmer_size, frac_mod,
 #endif
-					core_counts, contiguous_counts, distinct_cores, 
+					core_counts, contiguous_counts, distinct_cores,
 					durations, lengths, length_gaps, sizes, 
 					g_info.chroms->size);
 
@@ -488,6 +552,11 @@ int main(int argc, char **argv) {
 #elif defined(LCP)
 	std::cout << '\t' << "\"l\": " << lcp_level << "," << std::endl;
 	std::cout << '\t' << "\"d\": " << dct_count  << "," << std::endl;
+#elif defined(KMER)
+	std::cout << '\t' << "\"k\": " << kmer_size  << "," << std::endl;
+#elif defined(FRACMH)
+	std::cout << '\t' << "\"k\": " << kmer_size  << "," << std::endl;
+	std::cout << '\t' << "\"mod\": " << frac_mod << "," << std::endl;
 #endif
 
 	// Total Cores
@@ -540,7 +609,12 @@ int main(int argc, char **argv) {
 	std::cout << '\t' << "\"min_max_len\": \"" << format_int(length_gaps.minimum) << "/" << format_int(length_gaps.maximum) << "\"," << std::endl;
 
 	// Total Sizes
-	std::cout << '\t' << "\"size\": " << format_double(sizes / (1024.0 * 1024.0 * 1024.0)) << std::endl;
+	std::cout << '\t' << "\"size\": " << format_double(sizes / (1024.0 * 1024.0 * 1024.0)) << "\"," << std::endl;
+
+	// Metadata
+	if (shortname != NULL) {
+		std::cout << '\t' << "\"shortname\": \"" << shortname << "\"" << std::endl;
+	}
 
 	std::cout << "}," << std::endl;
 

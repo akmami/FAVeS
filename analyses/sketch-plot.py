@@ -17,43 +17,50 @@ import matplotlib.lines as mlines
 OUT_DIR = Path("../out")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-PARAM_KEYS = ["k", "w", "s", "b", "n", "w_min", "w_max", "l", "d"]
+PARAM_KEYS = ["k", "w", "s", "b", "n", "w_min", "w_max", "l", "d", "mod"]
 STYLE_KEYS = {"color", "style", "marker", "label"}
 
 METHOD_CONFIGS = [
     {
         "name": "Blend seeds",
-        "path": "../out/fa-blend/blend-seeds-output.txt",
+        "path": "../out/blend/human.json",
         "targets": [
             {"k": 21, "w": 11, "b": 50, "n": 5, "color": "#5A6F8E", "style": "-"},
         ],
     },
     {
         "name": "Minimizers",
-        "path": "../out/fa-minimizer/minimizer-seeds-output.txt",
+        "path": "../out/minimizer/human.json",
         "targets": [
             {"k": 21, "w": 11, "color": "#6BAF92", "style": "-"},
         ],
     },
     {
         "name": "Syncmer",
-        "path": "../out/fa-syncmer/syncmer-seeds-output.txt",
+        "path": "../out/syncmer/human.json",
         "targets": [
             {"k": 21, "s": 10, "color": "#D8C99B", "style": "-"},
         ],
     },
     {
         "name": "Strobemer",
-        "path": "../out/fa-strobemer/strobemer-seeds-output.txt",
+        "path": "../out/strobemer/human.json",
         "targets": [
             {"n": 2, "k": 22, "w_min": 6, "w_max": 16, "color": "#8E5A99", "style": "-"},
         ],
     },
     {
         "name": "LCP",
-        "path": "../out/fa-lcp/lcp-seeds-output.txt",
+        "path": "../out/lcp/human.json",
         "targets": [
             {"l": 3, "d": 1, "color": "#4C956C", "style": "-"},
+        ],
+    },
+    {
+        "name": "FracMinHash",
+        "path": "../out/fracmh/human.json",
+        "targets": [
+            {"k": 21, "mod": 6, "color": "#4477AA", "style": "-"},
         ],
     },
 ]
@@ -64,15 +71,15 @@ PLOTS = [
         "ylabel": "Unique Seed Ratio",
         "title": "Uniqueness vs Relaxation",
         "ylim": (0.3, 1.0),
-        "filename": "all_methods_uniqueness.png",
+        "filename": "all_methods_uniqueness.pdf",
         "legend_loc": "lower right",
     },
     {
         "metric": "gap_ratio",
         "ylabel": "Gap Ratio",
         "title": "Gap Ratio vs Relaxation",
-        "ylim": (0, 0.3),
-        "filename": "all_methods_gap.png",
+        "ylim": (0, 0.35),
+        "filename": "all_methods_gap.pdf",
         "legend_loc": "upper right",
     },
 ]

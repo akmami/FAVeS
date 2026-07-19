@@ -1,226 +1,234 @@
-CHM13_FASTA := ../data/chm13v2.0.fa
-HG38_FASTA := ../data/human_v38.fasta
+SHELL := /bin/bash
 
-# Programs
-# fa
-SEEDS := sketch-seeds
-SIMULATE := simulation
+# directories
+CUR    := $(shell pwd)
+REPO   := $(abspath $(CUR)/..)
+SKETCH := $(REPO)/sketch
+LIB    := $(REPO)/lib
+BIN    := $(REPO)/bin
+OUT    := $(REPO)/out
+BUILD  := $(OUT)/.build
 
-# Prefixes
-BLEND := blend-seeds
-MINIMIZER := minimizer-seeds
-SYNCMER := syncmer-seeds
-STROBEMER := strobemer-seeds
-STROBEMER2 := strobemer2-seeds
-LCP := lcp-seeds
+# toolchain
+GXX      := g++
+GCC      := gcc
+CXXFLAGS := -std=c++17 -O3 -Wall -Wextra -Wpedantic
+SIMD     := -mavx2 -msse4.1
+# optional: use /usr/bin/time -v when available, otherwise run untimed
+TIME     ?= $(shell command -v /usr/bin/time >/dev/null 2>&1 && echo '/usr/bin/time -v')
+JOBS     ?= $(shell nproc 2>/dev/null || echo 4)
+PYTHON   ?= python3
+JOBS 	 ?= 8
 
-# Directories
-CURRENT_DIR := $(shell pwd)
-DATA_DIR := $(CURRENT_DIR)/../data
-EXECUTABLE_DIR := $(CURRENT_DIR)/../bin
-OUT_DIR := $(CURRENT_DIR)/../out
+# shortnames
+dm6_NAME      ?= "D mel."
+ecoliK12_NAME ?= "E. coli"
+mtub_NAME     ?= "Mtb"
+pf3D7_NAME    ?= "Pf"
+sacCer3_NAME  ?= "Yeast"
+human_NAME    ?= "Human"
 
-# Extension
-CXX := .cpp
+# genomes: <name>_FASTA. single: GENOME=<name>; batch: GENOMES="a b c"
+dm6_FASTA      ?= ../data/dm6/GCF_000001215.4_Release_6_plus_ISO1_MT_genomic.fasta
+ecoliK12_FASTA ?= ../data/ecoliK12/GCF_000005845.2_ASM584v2_genomic.fasta
+mtub_FASTA     ?= ../data/mtub/GCF_000195955.2_ASM19595v2_genomic.fasta
+pf3D7_FASTA    ?= ../data/pf3D7/GCF_000002765.3_ASM276v1_genomic.fasta
+sacCer3_FASTA  ?= ../data/sacCer3/GCF_000146045.2_R64_genomic.fasta
+human_FASTA    ?= ../data/human/human_v38.fasta
+GENOME    ?= human
+GENOMES   ?= ecoliK12 mtub sacCer3 pf3D7 dm6 human
+FASTA     ?= $($(GENOME)_FASTA)
+SHORTNAME ?= $($(GENOME)_NAME)
 
-# Compiler
-GXX := g++
-CXXFLAGS = -std=c++17 -O3 -Wall -Wextra -Wpedantic
-TIME := /usr/bin/time -v
+# analysis knobs
+KMAX      ?= 512
+LHIST     ?= 2048
+KSWEEP    ?= 11 13 15 17 19 21 23 25 27
+SWEEP_W   ?= 11
+SWEEP_MOD ?= 6
 
-.PHONY: all %
+# method registry: add a technique = add one block
+# <m>_MACRO  : -D define selecting the branch in sketch-seeds.cpp
+# <m>_LIB    : static library base name (lib<LIB>.a)
+# <m>_SRC    : source file relative to sketch/
+# <m>_CC     : compiler for the library object (g++ for .cpp / kmer / lcp)
+# <m>_PARAMS : run grid; tuples separated by '|', each is the args after FASTA
+METHODS := kmer fracmh minimizer syncmer blend strobemer strobemer2 lcp
 
-%:
-	@:
+kmer_MACRO  := KMER
+kmer_LIB    := kmer
+kmer_SRC    := kmer.c
+kmer_CC     := $(GXX)
+kmer_PARAMS ?= 15 | 21
 
-all: mkdir_bin mkdir_out
+fracmh_MACRO  := FRACMH
+fracmh_LIB    := fracmh
+fracmh_SRC    := fracmh.c
+fracmh_CC     := $(GCC)
+fracmh_PARAMS ?= 15 $(SWEEP_MOD) | 21 $(SWEEP_MOD)
 
-mkdir_bin:
-	@if [ ! -d "$(EXECUTABLE_DIR)" ]; then \
-		echo "$(EXECUTABLE_DIR) does not exist. Creating..."; \
-		mkdir $(EXECUTABLE_DIR); \
-	fi
+minimizer_MACRO  := MINIMIZER
+minimizer_LIB    := minimizer
+minimizer_SRC    := minimizer.c
+minimizer_CC     := $(GCC)
+minimizer_PARAMS ?= 21 11 | 15 10
 
-mkdir_out:
-	@if [ ! -d "$(OUT_DIR)" ]; then \
-		echo "$(OUT_DIR) does not exist. Creating..."; \
-		mkdir $(OUT_DIR); \
-	fi
+syncmer_MACRO  := SYNCMER
+syncmer_LIB    := syncmer
+syncmer_SRC    := syncmer.c
+syncmer_CC     := $(GCC)
+syncmer_PARAMS ?= 21 10 | 15 10 | 15 5
 
-check_fasta:
-	@if [ -z "$(CHM13_FASTA)" ]; then \
-        echo "FASTA is not set or is empty. Exiting"; \
-		exit 1; \
-    fi
-	@if [ ! -f $(CHM13_FASTA) ]; then \
-		echo "$(CHM13_FASTA) does not exist. Exiting."; \
-		exit 1; \
-	fi
+blend_MACRO  := BLEND
+blend_LIB    := blend
+blend_SRC    := blend.c
+blend_CC     := $(GCC)
+blend_PARAMS ?= 21 11 50 3 | 21 11 50 5 | 21 11 50 7 | 15 10 50 3 | 15 10 50 5 | 15 10 50 7
 
-blend: 
-	@mkdir -p ../lib
-	gcc -O3 -mavx2 -msse4.1 -c ../sketch/blend.c -I blend
-	ar rcs ../lib/libblend.a blend.o
-	@rm -f blend.o
+strobemer_MACRO  := STROBEMER
+strobemer_LIB    := strobemer
+strobemer_SRC    := strobemer/strobemer.cpp
+strobemer_CC     := $(GXX)
+strobemer_PARAMS ?= 2 22 6 16
 
-minimizer: 
-	@mkdir -p ../lib
-	gcc -O3 -mavx2 -msse4.1 -c ../sketch/minimizer.c -I minimizer
-	ar rcs ../lib/libminimizer.a minimizer.o
-	@rm -f minimizer.o
+strobemer2_MACRO  := STROBEMER2
+strobemer2_LIB    := strobemer2
+strobemer2_SRC    := strobemer/strobemer2.cpp
+strobemer2_CC     := $(GXX)
+strobemer2_PARAMS ?= 250 17
 
-syncmer: 
-	@mkdir -p ../lib
-	gcc -O3 -mavx2 -msse4.1 -c ../sketch/syncmer.c -I syncmer
-	ar rcs ../lib/libsyncmer.a syncmer.o
-	@rm -f syncmer.o
+lcp_MACRO  := LCP
+lcp_LIB    := lcp
+lcp_SRC    := lps.c
+lcp_CC     := $(GXX)
+lcp_PARAMS ?= 2 1 | 3 1 | 4 1
 
-strobemer:
-	@mkdir -p ../lib
-	g++ -O3 -mavx2 -msse4.1 -std=c++17 -c ../sketch/strobemer/strobemer.cpp -I strobemer
-	ar rcs ../lib/libstrobemer.a strobemer.o
-	@rm -f strobemer.o
+# libdivsufsort
+DIVSUFSORT_PREFIX  ?= $(REPO)/third_party/libdivsufsort
+DIVSUFSORT_URL     ?= https://github.com/y-256/libdivsufsort.git
+DIVSUFSORT_TARBALL ?= https://github.com/y-256/libdivsufsort/archive/refs/heads/master.tar.gz
+DS_INC  := $(if $(wildcard $(DIVSUFSORT_PREFIX)/include/divsufsort.h),-I$(DIVSUFSORT_PREFIX)/include,)
+DS_LDIR := $(if $(wildcard $(DIVSUFSORT_PREFIX)/lib/libdivsufsort.a),-L$(DIVSUFSORT_PREFIX)/lib,)
+DS_LIBS := $(DS_LDIR) -ldivsufsort -ldivsufsort64
 
-strobemer2:
-	@mkdir -p ../lib
-	g++ -O3 -mavx2 -msse4.1 -std=c++17 -c ../sketch/strobemer/strobemer2.cpp -I strobemer2
-	ar rcs ../lib/libstrobemer2.a strobemer2.o
-	@rm -f strobemer2.o
+.DEFAULT_GOAL := help
+.PHONY: help dirs clean divsufsort matchlen matchlenAll sweep plots $(METHODS)
+.SECONDARY:
 
-lcp:
-	@mkdir -p ../lib
-	g++ -O3 -mavx2 -msse4.1 -std=c++17 -c ../sketch/lps.c -I lps
-	ar rcs ../lib/liblcp.a lps.o
-	@rm -f lps.o
+# help
+help:
+	@echo "FAVeS analyses (single Makefile). Targets:"
+	@echo "  make divsufsort                  build libdivsufsort locally (no root)"
+	@echo "  make matchlen    [GENOME=human]  exact p(k)=CDF(L)          [1,2,3,5,7]"
+	@echo "  make matchlenAll [GENOMES=...]   match-length per genome     [4]"
+	@echo "  make sketch-<m>  [GENOME=human]  run one technique's grid"
+	@echo "  make <m>                         shorthand for sketch-<m>"
+	@echo "  make sweep       [GENOME=human]  kmer/minimizer/fracmh sweep  [6]"
+	@echo "  make plots                       fit (alpha,beta) + figures"
+	@echo "  methods : $(METHODS)"
+	@echo "  genomes : $(GENOMES)"
+
+dirs:
+	@mkdir -p $(BIN) $(OUT) $(LIB) $(BUILD)
 
 clean:
-	@if [ -d "$(OUT_DIR)" ]; then \
-		echo "Removing $(OUT_DIR)"; \
-		rm -r $(OUT_DIR); \
-	fi
-	@if [ -d "$(EXECUTABLE_DIR)" ]; then \
-		echo "Removing $(EXECUTABLE_DIR)"; \
-		rm -r $(EXECUTABLE_DIR); \
-	fi
-	@echo "Cleaned."
+	@rm -rf $(BUILD) $(BIN)/sketch-seeds.* $(BIN)/match-length; echo "cleaned"
 
-######################################################################
-# BLEND
-######################################################################
-faBlend: check_fasta mkdir_bin mkdir_out blend
-	$(GXX) $(CXXFLAGS) -mavx2 -msse4.1 -DBLEND -c $(SEEDS)$(CXX)
-	$(GXX) $(CXXFLAGS) -o $(SEEDS) $(SEEDS).o -L ../lib -lblend
-	@rm $(SEEDS).o
-	@mv $(SEEDS) $(EXECUTABLE_DIR)
-	@mkdir -p ../out/fa-blend
-	@echo "Output -> ../out/fa-blend/$(BLEND)-output.txt"
-	@rm -f ../out/fa-blend/$(BLEND)-output.txt ../out/fa-blend/tmp.$(BLEND).*.log
-	@echo "[" > ../out/fa-blend/$(BLEND)-output.txt
-	@parallel -j $$(nproc) \
-		'../bin/$(SEEDS) $(HG38_FASTA) {1} {2} {3} {4} > ../out/fa-blend/tmp.$(BLEND).{1}.{2}.{3}.{4}.log 2>&1' :::+ 21 15 :::+ 11 10 ::: 32 38 50 ::: 3 5 7
-	@cat ../out/fa-blend/tmp.$(BLEND).*.log >> ../out/fa-blend/$(BLEND)-output.txt
-	@echo "]" >> ../out/fa-blend/$(BLEND)-output.txt
-	@rm -f ../out/fa-blend/tmp.$(BLEND).*.log
+# libdivsufsort
+divsufsort:
+	@if [ -f "$(DIVSUFSORT_PREFIX)/lib/libdivsufsort64.a" ]; then \
+		echo "libdivsufsort already present at $(DIVSUFSORT_PREFIX)"; \
+		exit 0; \
+	fi; \
+	set -e; command -v cmake >/dev/null || { echo "ERROR: need cmake (try: module load cmake)"; exit 1; }; \
+	w=$$(mktemp -d); \
+	echo ">> fetching libdivsufsort"; \
+	( git clone --depth 1 $(DIVSUFSORT_URL) $$w/src >/dev/null 2>&1 ) || \
+		( curl -fsSL $(DIVSUFSORT_TARBALL) -o $$w/ds.tgz && mkdir -p $$w/src && tar xzf $$w/ds.tgz -C $$w/src --strip-components=1 ); \
+	echo ">> building (static, 32+64-bit) -> $(DIVSUFSORT_PREFIX)"; \
+	mkdir -p $$w/build; cd $$w/build; \
+	cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_DIVSUFSORT64=ON -DBUILD_SHARED_LIBS=OFF \
+		-DCMAKE_INSTALL_PREFIX=$(DIVSUFSORT_PREFIX) $$w/src >/dev/null; \
+	make -j$(JOBS) >/dev/null; make install >/dev/null; rm -rf $$w; \
+	echo ">> libdivsufsort installed"
 
-######################################################################
-# MINIMIZERS
-######################################################################
-faMin: check_fasta mkdir_bin mkdir_out minimizer
-	$(GXX) $(CXXFLAGS) -mavx2 -msse4.1 -DMINIMIZER -c $(SEEDS)$(CXX)
-	$(GXX) $(CXXFLAGS) -o $(SEEDS) $(SEEDS).o -L ../lib -lminimizer
-	@rm $(SEEDS).o
-	@mv $(SEEDS) $(EXECUTABLE_DIR)
-	@mkdir -p ../out/fa-minimizer
-	@echo "Output -> ../out/fa-minimizer/$(MINIMIZER)-output.txt"
-	@rm -f ../out/fa-minimizer/$(MINIMIZER)-output.txt ../out/fa-minimizer/tmp.$(MINIMIZER).*.log
-	@echo "[" > ../out/fa-minimizer/$(MINIMIZER)-output.txt
-	@parallel -j 2 --colsep ' ' \
-		'../bin/$(SEEDS) $(HG38_FASTA) {1} {2} > ../out/fa-minimizer/tmp.$(MINIMIZER).{1}.{2}.log 2>&1' ::: "21 11" "15 10"
-	@cat ../out/fa-minimizer/tmp.$(MINIMIZER).*.log >> ../out/fa-minimizer/$(MINIMIZER)-output.txt
-	@echo "]" >> ../out/fa-minimizer/$(MINIMIZER)-output.txt
-	@rm -f ../out/fa-minimizer/tmp.$(MINIMIZER).*.log
+# match-length
+$(BIN)/match-length: match-length.cpp | dirs
+	$(GXX) $(CXXFLAGS) $(DS_INC) -o $@ $< $(DS_LIBS)
 
-######################################################################
-# SYNCMERS
-######################################################################
-faSync: check_fasta mkdir_bin mkdir_out syncmer
-	$(GXX) $(CXXFLAGS) -mavx2 -msse4.1 -DSYNCMER -c $(SEEDS)$(CXX) 
-	$(GXX) $(CXXFLAGS) -o $(SEEDS) $(SEEDS).o -L ../lib -lsyncmer
-	@rm $(SEEDS).o
-	@mv $(SEEDS) $(EXECUTABLE_DIR)
-	@mkdir -p ../out/fa-syncmer
-	@echo "Output -> ../out/fa-syncmer/$(SYNCMER)-output.txt"
-	@rm -f ../out/fa-syncmer/$(SYNCMER)-output.txt ../out/fa-syncmer/tmp.$(SYNCMER).*.log
-	@echo "[" > ../out/fa-syncmer/$(SYNCMER)-output.txt
-	@parallel -j 3 --colsep ' ' \
-		'../bin/$(SEEDS) $(HG38_FASTA) {1} {2} > ../out/fa-syncmer/tmp.$(SYNCMER).{1}.{2}.log 2>&1' ::: "21 10" "15 10" "15 5"
-	@cat ../out/fa-syncmer/tmp.$(SYNCMER).*.log >> ../out/fa-syncmer/$(SYNCMER)-output.txt
-	@echo "]" >> ../out/fa-syncmer/$(SYNCMER)-output.txt
-	@rm -f ../out/fa-syncmer/tmp.$(SYNCMER).*.log
+matchlen: $(BIN)/match-length
+	@mkdir -p $(OUT)/match-length
+	$(TIME) $(BIN)/match-length $(FASTA) $(SHORTNAME) $(KMAX) $(LHIST) > $(OUT)/match-length/$(GENOME).json
+	@echo "-> $(OUT)/match-length/$(GENOME).json"
 
-######################################################################
-# STROBEMERS
-######################################################################
-faStrobe: check_fasta mkdir_bin mkdir_out strobemer
-	$(GXX) $(CXXFLAGS) -mavx2 -msse4.1 -DSTROBEMER -c $(SEEDS)$(CXX) 
-	$(GXX) $(CXXFLAGS) -o $(SEEDS) $(SEEDS).o -L ../lib -lstrobemer
-	@rm $(SEEDS).o
-	@mv $(SEEDS) $(EXECUTABLE_DIR)
-	@mkdir -p ../out/fa-strobemer
-	@echo "Output -> ../out/fa-strobemer/$(STROBEMER)-output.txt"
-	@rm -f ../out/fa-strobemer/$(STROBEMER)-output.txt ../out/fa-strobemer/tmp.$(STROBEMER).*.log
-	@echo "[" > ../out/fa-strobemer/$(STROBEMER)-output.txt
-	../bin/$(SEEDS) $(HG38_FASTA) 2 22 6 16 > ../out/fa-strobemer/$(STROBEMER)-output.txt 2>&1
-	@echo "]" >> ../out/fa-strobemer/$(STROBEMER)-output.txt
+matchlenAll: $(BIN)/match-length
+	@mkdir -p $(OUT)/match-length; \
+	declare -A F=( $(foreach g,$(GENOMES),[$(g)]="$($(g)_FASTA)") ); \
+	declare -A S=( $(foreach g,$(GENOMES),[$(g)]=$($(g)_NAME)) ); \
+	for g in $(GENOMES); do f=$${F[$$g]}; s=$${S[$$g]}; \
+		if [ -f "$$f" ]; then \
+			echo ">> match-length $$g ($$s)"; \
+			$(BIN)/match-length "$$f" "$$s" $(KMAX) $(LHIST) > $(OUT)/match-length/$$g.json; \
+		else \
+			echo "  skip $$g ($$f not found)"; \
+		fi; \
+	done; \
+	echo "-> $(OUT)/match-length/"
 
-######################################################################
-# STROBEMERS2
-######################################################################
-faStrobe2: check_fasta mkdir_bin mkdir_out strobemer2
-	$(GXX) $(CXXFLAGS) -mavx2 -msse4.1 -DSTROBEMER2 -c $(SEEDS)$(CXX) 
-	$(GXX) $(CXXFLAGS) -o $(SEEDS) $(SEEDS).o -L ../lib -lstrobemer2
-	@rm $(SEEDS).o
-	@mv $(SEEDS) $(EXECUTABLE_DIR)
-	@mkdir -p ../out/fa-strobemer2
-	@echo "Output -> ../out/fa-strobemer2/$(STROBEMER2)-output.txt"
-	@rm -f ../out/fa-strobemer2/$(STROBEMER2)-output.txt ../out/fa-strobemer2/tmp.$(STROBEMER2).*.log
-	@echo "[" > ../out/fa-strobemer2/$(STROBEMER2)-output.txt
-	../bin/$(SEEDS) $(HG38_FASTA) 250 17 > ../out/fa-strobemer2/$(STROBEMER2)-output.txt 2>&1
-	@echo "]" >> ../out/fa-strobemer2/$(STROBEMER2)-output.txt
+# generic sketch binary: builds lib + $(BIN)/sketch-seeds.<method>
+$(BIN)/sketch-seeds.%: sketch-seeds.cpp | dirs
+	@m=$*; macro=$($*_MACRO); lib=$($*_LIB); src=$($*_SRC); cc=$($*_CC); \
+	if [ -z "$$macro" ]; then \
+		echo "ERROR: unknown method '$$m' (know: $(METHODS))"; \
+		exit 1; \
+	fi; \
+	std=""; case "$$src" in *.cpp) std="-std=c++17";; esac; \
+	echo ">> lib$$lib.a  ($$src)"; \
+	$$cc -O3 $(SIMD) $$std -c $(SKETCH)/$$src -o $(BUILD)/$$lib.o; \
+	ar rcs $(LIB)/lib$$lib.a $(BUILD)/$$lib.o; \
+	echo ">> sketch-seeds.$$m  (-D$$macro)"; \
+	$(GXX) $(CXXFLAGS) $(SIMD) -D$$macro -c sketch-seeds.cpp -o $(BUILD)/ss.$$m.o; \
+	$(GXX) $(CXXFLAGS) -o $@ $(BUILD)/ss.$$m.o -L$(LIB) -l$$lib
 
-######################################################################
-# LCP
-######################################################################
-faLcp: check_fasta mkdir_bin mkdir_out lcp
-	$(GXX) $(CXXFLAGS) -mavx2 -msse4.1 -DLCP -c $(SEEDS)$(CXX) 
-	$(GXX) $(CXXFLAGS) -o $(SEEDS) $(SEEDS).o -L ../lib -llcp
-	@rm $(SEEDS).o
-	@mv $(SEEDS) $(EXECUTABLE_DIR)
-	@mkdir -p ../out/fa-lcp
-	@echo "Output -> ../out/fa-lcp/$(LCP)-output.txt"
-	@rm -f ../out/fa-lcp/$(LCP)-output.txt ../out/fa-lcp/tmp.$(LCP).*.log
-	@echo "[" > ../out/fa-lcp/$(LCP)-output.txt
-	@parallel -j 3 \
-		'../bin/$(SEEDS) $(HG38_FASTA) {1} 1 > ../out/fa-lcp/tmp.$(LCP).{1}.log 2>&1' :::+ 2 3 4
-	@cat ../out/fa-lcp/tmp.$(LCP).*.log >> ../out/fa-lcp/$(LCP)-output.txt
-	@echo "]" >> ../out/fa-lcp/$(LCP)-output.txt
-	@rm -f ../out/fa-lcp/tmp.$(LCP).*.log
+# run one technique over its parameter grid on $(GENOME)
+sketch-%: $(BIN)/sketch-seeds.%
+	@m=$*; d=$(OUT)/$$m; out=$$d/$(GENOME).json; \
+	prog="$(BIN)/sketch-seeds.$$m $(FASTA) $(SHORTNAME)"; \
+	mkdir -p $$d; \
+	echo ">> $$m x $(GENOME)"; \
+	rm -f $$out $$d/tmp.$(GENOME).* $$d/$(GENOME).err; \
+	i=0; \
+	echo '$($*_PARAMS)' | tr '|' '\n' | sed '/^$$/d' | \
+		while read -r args; do i=$$((i+1)); \
+			echo "$$prog $$args > $$d/tmp.$(GENOME).$$i 2>> $$d/$(GENOME).err"; \
+		done | \
+		parallel -j $(JOBS); \
+	{ echo "["; cat $$(ls -v $$d/tmp.$(GENOME).*); } > $$out; \
+	perl -0777 -i -pe 's/,\s*\z/\n/' $$out; \
+	echo "]" >> $$out; \
+	rm -f $$d/tmp.$(GENOME).*; \
+	[ -f "$$d/$(GENOME).err" ] && [ ! -s "$$d/$(GENOME).err" ] && rm "$$d/$(GENOME).err"; \
+	echo "-> $$out"
 
-######################################################################
-# BLEND ERROR TOLERANCE EXPERIMENT
-######################################################################
-errSim: mkdir_bin mkdir_out blend
-	$(GXX) $(CXXFLAGS) -mavx2 -msse4.1 -c $(SIMULATE)$(CXX)
-	$(GXX) $(CXXFLAGS) -o $(SIMULATE) $(SIMULATE).o $(BLENDLIB)
-	@rm $(SIMULATE).o
-	@mv $(SIMULATE) $(EXECUTABLE_DIR)
-	@mkdir -p ../out/err-sim
-	@mkdir -p ../data/sim
-	@echo "Output -> ../out/err-sim/$(SIMULATE)-output.txt"
-	@rm -f ../out/err-sim/$(SIMULATE)-output.txt ../out/err-sim/tmp.$(SIMULATE).*.log
-	@echo "[" > ../out/err-sim/$(SIMULATE)-output.txt
-	@parallel -j $$(nproc) \
-		'../bin/$(SIMULATE) {1} {2} {3} {4} > ../out/err-sim/tmp.$(SIMULATE).{1}.{2}.{3}.{4}.log 2>&1' :::+ 21 15 :::+ 11 10 ::: 32 38 50 ::: 3 5 7
-	@cat ../out/err-sim/tmp.$(SIMULATE).*.log >> ../out/err-sim/$(SIMULATE)-output.txt
-	@echo "]" >> ../out/err-sim/$(SIMULATE)-output.txt
-	@rm -f ../out/err-sim/tmp.$(SIMULATE).*.log
+# shorthand: `make kmer` == `make sketch-kmer`
+$(METHODS): %: sketch-%
+
+sketch-all: $(addprefix sketch-,$(METHODS))
+	@echo ">> all methods done -> $(OUT)"
+
+# sketching-invariance sweep (analysis 6)
+sweep: $(BIN)/sketch-seeds.kmer $(BIN)/sketch-seeds.minimizer $(BIN)/sketch-seeds.fracmh
+	@mkdir -p $(OUT)/sweep; \
+	for m in kmer minimizer fracmh; do \
+		echo ">> sweep $$m x $(GENOME)  (k: $(KSWEEP))"; out=$(OUT)/sweep/$(GENOME).$$m.json; echo "[" > $$out; \
+		for k in $(KSWEEP); do \
+			extra=""; [ $$m = minimizer ] && extra=$(SWEEP_W); [ $$m = fracmh ] && extra=$(SWEEP_MOD); \
+			$(BIN)/sketch-seeds.$$m $(FASTA) $$k $$extra; \
+		done >> $$out; echo "]" >> $$out; echo "-> $$out"; \
+	done
+
+# plots
+plots:
+	@ls $(OUT)/match-length/*.json >/dev/null 2>&1 || { echo "no match-length JSON (run: make matchlen)"; exit 1; }; \
+	$(PYTHON) fit-uniqueness.py $(OUT)/match-length/*.json --out $(OUT)/kmer_uniqueness
+	$(PYTHON) sketch-plot.py 

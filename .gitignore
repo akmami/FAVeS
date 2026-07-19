@@ -17,3 +17,5 @@ analyses/faves.err.*
 analyses/slurm*
 analyses/faves-config.sh
 analyses/faves-config.tmp.sh
+
+third_party/
