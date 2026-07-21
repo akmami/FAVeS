@@ -21,12 +21,12 @@ PYTHON   ?= python3
 JOBS 	 ?= 8
 
 # shortnames
-dm6_NAME      ?= "D mel."
-ecoliK12_NAME ?= "E. coli"
-mtub_NAME     ?= "Mtb"
-pf3D7_NAME    ?= "Pf"
-sacCer3_NAME  ?= "Yeast"
-human_NAME    ?= "Human"
+dm6_NAME      = D mel.
+ecoliK12_NAME = E. coli
+mtub_NAME     = Mtb
+pf3D7_NAME    = Pf
+sacCer3_NAME  = Yeast
+human_NAME    = Human
 
 # genomes: <name>_FASTA. single: GENOME=<name>; batch: GENOMES="a b c"
 dm6_FASTA      ?= ../data/dm6/GCF_000001215.4_Release_6_plus_ISO1_MT_genomic.fasta
@@ -35,17 +35,24 @@ mtub_FASTA     ?= ../data/mtub/GCF_000195955.2_ASM19595v2_genomic.fasta
 pf3D7_FASTA    ?= ../data/pf3D7/GCF_000002765.3_ASM276v1_genomic.fasta
 sacCer3_FASTA  ?= ../data/sacCer3/GCF_000146045.2_R64_genomic.fasta
 human_FASTA    ?= ../data/human/human_v38.fasta
-GENOME    ?= human
-GENOMES   ?= ecoliK12 mtub sacCer3 pf3D7 dm6 human
-FASTA     ?= $($(GENOME)_FASTA)
-SHORTNAME ?= $($(GENOME)_NAME)
+GENOME  ?= human
+GENOMES ?= ecoliK12 mtub sacCer3 pf3D7 dm6 human
+FASTA   ?= $($(GENOME)_FASTA)
+NAME    ?= $($(GENOME)_NAME)
 
 # analysis knobs
 KMAX      ?= 512
 LHIST     ?= 2048
 KSWEEP    ?= 11 13 15 17 19 21 23 25 27
-SWEEP_W   ?= 11
-SWEEP_MOD ?= 6
+
+# contiguous-k sketchers share the uniqueness-vs-k axis; strobemer (span) and lcp (level) use different parameters.
+SWEEP_METHODS ?= kmer minimizer fracmh syncmer blend
+SWEEP_GENOMES ?= $(GENOMES)
+SWEEP_W       ?= 11      # minimizer window
+SWEEP_MOD     ?= 6       # FracMinHash modulus
+SWEEP_S       ?= 10      # syncmer s-mer size
+SWEEP_B       ?= 50      # blend bits
+SWEEP_N       ?= 5       # blend n
 
 # method registry: add a technique = add one block
 # <m>_MACRO  : -D define selecting the branch in sketch-seeds.cpp
@@ -118,13 +125,14 @@ DS_LIBS := $(DS_LDIR) -ldivsufsort -ldivsufsort64
 # help
 help:
 	@echo "FAVeS analyses (single Makefile). Targets:"
-	@echo "  make divsufsort                  build libdivsufsort locally (no root)"
-	@echo "  make matchlen    [GENOME=human]  exact p(k)=CDF(L)          [1,2,3,5,7]"
-	@echo "  make matchlenAll [GENOMES=...]   match-length per genome     [4]"
-	@echo "  make sketch-<m>  [GENOME=human]  run one technique's grid"
-	@echo "  make <m>                         shorthand for sketch-<m>"
-	@echo "  make sweep       [GENOME=human]  kmer/minimizer/fracmh sweep  [6]"
-	@echo "  make plots                       fit (alpha,beta) + figures"
+	@echo "  make divsufsort                     build libdivsufsort locally"
+	@echo "  make matchlen       [GENOME=human]  exact p(k)=CDF(L)            [1,2,3,5,7]"
+	@echo "  make matchlenAll    [GENOMES=...]   match-length per genome      [4]"
+	@echo "  make sketch-methods [GENOME=human]  run one technique's grid"
+	@echo "  make sketch-all                     run all technique's grid"
+	@echo "  make <m>                            shorthand for sketch-<m>"
+	@echo "  make sweep          [GENOME=human]  kmer/minimizer/fracmh sweep  [6]"
+	@echo "  make plots                          fit (alpha,beta) + figures"
 	@echo "  methods : $(METHODS)"
 	@echo "  genomes : $(GENOMES)"
 
@@ -158,13 +166,13 @@ $(BIN)/match-length: match-length.cpp | dirs
 
 matchlen: $(BIN)/match-length
 	@mkdir -p $(OUT)/match-length
-	$(TIME) $(BIN)/match-length $(FASTA) $(SHORTNAME) $(KMAX) $(LHIST) > $(OUT)/match-length/$(GENOME).json
+	$(TIME) $(BIN)/match-length "$(FASTA)" "$(NAME)" $(KMAX) $(LHIST) > $(OUT)/match-length/$(GENOME).json
 	@echo "-> $(OUT)/match-length/$(GENOME).json"
 
 matchlenAll: $(BIN)/match-length
 	@mkdir -p $(OUT)/match-length; \
 	declare -A F=( $(foreach g,$(GENOMES),[$(g)]="$($(g)_FASTA)") ); \
-	declare -A S=( $(foreach g,$(GENOMES),[$(g)]=$($(g)_NAME)) ); \
+	declare -A S=( $(foreach g,$(GENOMES),[$(g)]="$($(g)_NAME)") ); \
 	for g in $(GENOMES); do f=$${F[$$g]}; s=$${S[$$g]}; \
 		if [ -f "$$f" ]; then \
 			echo ">> match-length $$g ($$s)"; \
@@ -193,7 +201,7 @@ $(BIN)/sketch-seeds.%: sketch-seeds.cpp | dirs
 # run one technique over its parameter grid on $(GENOME)
 sketch-%: $(BIN)/sketch-seeds.%
 	@m=$*; d=$(OUT)/$$m; out=$$d/$(GENOME).json; \
-	prog="$(BIN)/sketch-seeds.$$m $(FASTA) $(SHORTNAME)"; \
+	prog="$(BIN)/sketch-seeds.$$m \"$(FASTA)\" \"$(NAME)\""; \
 	mkdir -p $$d; \
 	echo ">> $$m x $(GENOME)"; \
 	rm -f $$out $$d/tmp.$(GENOME).* $$d/$(GENOME).err; \
@@ -213,22 +221,65 @@ sketch-%: $(BIN)/sketch-seeds.%
 # shorthand: `make kmer` == `make sketch-kmer`
 $(METHODS): %: sketch-%
 
-sketch-all: $(addprefix sketch-,$(METHODS))
+sketch-methods: $(addprefix sketch-,$(METHODS))
 	@echo ">> all methods done -> $(OUT)"
 
-# sketching-invariance sweep (analysis 6)
-sweep: $(BIN)/sketch-seeds.kmer $(BIN)/sketch-seeds.minimizer $(BIN)/sketch-seeds.fracmh
-	@mkdir -p $(OUT)/sweep; \
-	for m in kmer minimizer fracmh; do \
-		echo ">> sweep $$m x $(GENOME)  (k: $(KSWEEP))"; out=$(OUT)/sweep/$(GENOME).$$m.json; echo "[" > $$out; \
-		for k in $(KSWEEP); do \
-			extra=""; [ $$m = minimizer ] && extra=$(SWEEP_W); [ $$m = fracmh ] && extra=$(SWEEP_MOD); \
-			$(BIN)/sketch-seeds.$$m $(FASTA) $$k $$extra; \
-		done >> $$out; echo "]" >> $$out; echo "-> $$out"; \
+sketch-all:
+	@for g in $(GENOMES); do \
+		echo "==================  $$g  =================="; \
+		$(MAKE) -f $(firstword $(MAKEFILE_LIST)) --no-print-directory sketch-methods GENOME=$$g || exit $$?; \
 	done
 
+# sketching-invariance sweep
+sweep: $(foreach m,$(SWEEP_METHODS),$(BIN)/sketch-seeds.$(m))
+	@mkdir -p $(OUT)/sweep; \
+	declare -A F=( $(foreach g,$(SWEEP_GENOMES),[$(g)]="$($(g)_FASTA)") ); \
+	declare -A S=( $(foreach g,$(SWEEP_GENOMES),[$(g)]="$($(g)_NAME)") ); \
+	for g in $(SWEEP_GENOMES); do f=$${F[$$g]}; s=$${S[$$g]}; \
+		if [ ! -f "$$f" ]; then echo "  skip $$g ($$f not found)"; continue; fi; \
+		for m in $(SWEEP_METHODS); do \
+			echo ">> sweep $$m x $$g ($$s)  k: $(KSWEEP)"; out=$(OUT)/sweep/$$g.$$m.json; echo "[" > $$out; \
+			for k in $(KSWEEP); do \
+				case $$m in \
+				minimizer) extra="$(SWEEP_W)";; \
+				fracmh)    extra="$(SWEEP_MOD)";; \
+				syncmer)   extra="$(SWEEP_S)";; \
+				blend)     extra="$(SWEEP_W) $(SWEEP_B) $(SWEEP_N)";; \
+				*)         extra="";; \
+				esac; \
+				$(BIN)/sketch-seeds.$$m "$$f" "$$s" $$k $$extra 2>/dev/null || \
+				$(BIN)/sketch-seeds.$$m "$$f" $$k $$extra; \
+			done >> $$out; \
+			perl -0777 -i -pe 's/,\s*\z/\n/' $$out; \
+			echo "]" >> $$out; echo "  -> $$out"; \
+		done; \
+	done; echo "-> $(OUT)/sweep/"
+
 # plots
-plots:
+plot-uniqueness:
+	@echo "Plotting k-mer uniqueness / gap ..."
 	@ls $(OUT)/match-length/*.json >/dev/null 2>&1 || { echo "no match-length JSON (run: make matchlen)"; exit 1; }; \
-	$(PYTHON) fit-uniqueness.py $(OUT)/match-length/*.json --out $(OUT)/kmer_uniqueness
-	$(PYTHON) sketch-plot.py 
+	$(PYTHON) fit-uniqueness.py $(OUT)/match-length/*.json --out $(OUT)/kmer_uniqueness;
+	@echo ""
+
+sketch-plots:
+	@echo "Plotting sketching uniqueness / gap ..."
+	@declare -A S=( $(foreach g,$(GENOMES),[$(g)]="$($(g)_NAME)") ); \
+	for g in $(GENOMES); do s=$${S[$$g]}; \
+		echo ">> sketch-plot $$g ($$s)"; \
+		$(PYTHON) sketch-plot.py "$$g" "$$s"; \
+	done
+	@echo ""
+
+sketch-sweep-plots:
+	@echo "Plotting sketch sweeps ..."
+	@ls $(OUT)/sweep/*.json >/dev/null 2>&1 || { echo "no sweep JSON (run: make sweep)"; exit 1; }; \
+	declare -A S=( $(foreach g,$(GENOMES),[$(g)]="$($(g)_NAME)") ); \
+	for g in $(GENOMES); do s=$${S[$$g]}; \
+		echo ">> sketch-sweep-plot $$g ($$s)"; \
+		$(PYTHON) sketch-sweep-plot.py "$$g" "$$s"; \
+	done
+	@echo ""
+
+plots: plot-uniqueness sketch-plots sketch-sweep-plots
+	

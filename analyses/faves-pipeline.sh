@@ -36,10 +36,12 @@ hg002_prefix="hg002_prefix"
 hg002_reads="hg002.fastq.gz"
 hg002_gold="HG002_GRCh38_1_22_v4.2.1_benchmark.bed"
 
-datasets=(ecoliK12 mtub pf3D7 sacCer3 human)
+datasets=(dm6 ecoliK12 mtub pf3D7 sacCer3 human)
 tools=(fvs mm2-gtk) # e2i)
 
-CONFIG_FILE="faves-config.sh"
+FAVES="../faves"
+
+CONFIG_FILE="faves-config.tmp.sh"
 
 if [[ -n "$CONFIG_FILE" && -f "$CONFIG_FILE" ]]; then
     echo "Loading config from $CONFIG_FILE"
@@ -129,7 +131,7 @@ faves_pipeline() {
     
     mkdir -p $tmp_dir/faves
 
-    /bin/time -v ../faves \
+    /bin/time -v ${FAVES} \
         -f $fasta \
         -q "${fastq[@]}" \
         -t 64 \

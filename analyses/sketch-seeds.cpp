@@ -609,7 +609,7 @@ int main(int argc, char **argv) {
 	std::cout << '\t' << "\"min_max_len\": \"" << format_int(length_gaps.minimum) << "/" << format_int(length_gaps.maximum) << "\"," << std::endl;
 
 	// Total Sizes
-	std::cout << '\t' << "\"size\": " << format_double(sizes / (1024.0 * 1024.0 * 1024.0)) << "\"," << std::endl;
+	std::cout << '\t' << "\"size\": " << format_double(sizes / (1024.0 * 1024.0 * 1024.0)) << "," << std::endl;
 
 	// Metadata
 	if (shortname != NULL) {

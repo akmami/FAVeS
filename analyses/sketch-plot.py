@@ -1,4 +1,4 @@
-import json
+import json, argparse
 from pathlib import Path
 
 import numpy as np
@@ -23,42 +23,42 @@ STYLE_KEYS = {"color", "style", "marker", "label"}
 METHOD_CONFIGS = [
     {
         "name": "Blend seeds",
-        "path": "../out/blend/human.json",
+        "path": "../out/blend/",
         "targets": [
             {"k": 21, "w": 11, "b": 50, "n": 5, "color": "#5A6F8E", "style": "-"},
         ],
     },
     {
         "name": "Minimizers",
-        "path": "../out/minimizer/human.json",
+        "path": "../out/minimizer/",
         "targets": [
             {"k": 21, "w": 11, "color": "#6BAF92", "style": "-"},
         ],
     },
     {
         "name": "Syncmer",
-        "path": "../out/syncmer/human.json",
+        "path": "../out/syncmer/",
         "targets": [
             {"k": 21, "s": 10, "color": "#D8C99B", "style": "-"},
         ],
     },
     {
         "name": "Strobemer",
-        "path": "../out/strobemer/human.json",
+        "path": "../out/strobemer/",
         "targets": [
             {"n": 2, "k": 22, "w_min": 6, "w_max": 16, "color": "#8E5A99", "style": "-"},
         ],
     },
     {
         "name": "LCP",
-        "path": "../out/lcp/human.json",
+        "path": "../out/lcp/",
         "targets": [
             {"l": 3, "d": 1, "color": "#4C956C", "style": "-"},
         ],
     },
     {
         "name": "FracMinHash",
-        "path": "../out/fracmh/human.json",
+        "path": "../out/fracmh/",
         "targets": [
             {"k": 21, "mod": 6, "color": "#4477AA", "style": "-"},
         ],
@@ -71,7 +71,7 @@ PLOTS = [
         "ylabel": "Unique Seed Ratio",
         "title": "Uniqueness vs Relaxation",
         "ylim": (0.3, 1.0),
-        "filename": "all_methods_uniqueness.pdf",
+        "filename": "all_methods_uniqueness",
         "legend_loc": "lower right",
     },
     {
@@ -79,7 +79,7 @@ PLOTS = [
         "ylabel": "Gap Ratio",
         "title": "Gap Ratio vs Relaxation",
         "ylim": (0, 0.35),
-        "filename": "all_methods_gap.pdf",
+        "filename": "all_methods_gap",
         "legend_loc": "upper right",
     },
 ]
@@ -173,12 +173,12 @@ def make_row(method_name, rec, style):
         row[param] = safe_value(rec, param)
     return row
 
-def load_all_methods(method_configs):
+def load_all_methods(method_configs, species):
     all_rows = []
 
     for m_idx, config in enumerate(method_configs):
         method_name = config["name"]
-        path = config["path"]
+        path = config["path"] + species + ".json"
         targets = config.get("targets", [])
 
         # be forgiving if I wrote a single dict instead of a list.
@@ -291,7 +291,7 @@ def plot_metric(
                 label=label,
             )
 
-        print(label, "r=", r, metric, "=", y)
+        # print(label, "r=", r, metric, "=", y)
 
     plt.xlabel("Relaxation Radius (r)")
     plt.ylabel(ylabel)
@@ -325,7 +325,11 @@ def plot_metric(
 # ==========================================================
 
 def main():
-    rows = load_all_methods(METHOD_CONFIGS)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("species", default="human")
+    ap.add_argument("shortname", default="Human")
+    args = ap.parse_args()
+    rows = load_all_methods(METHOD_CONFIGS, args.species)
 
     if not rows:
         raise ValueError(
@@ -338,9 +342,9 @@ def main():
             rows=rows,
             metric=plot_cfg["metric"],
             ylabel=plot_cfg["ylabel"],
-            title=plot_cfg["title"],
+            title=plot_cfg["title"] + " (" + args.shortname + ")",
             ylim=plot_cfg["ylim"],
-            filename=plot_cfg["filename"],
+            filename=plot_cfg["filename"] + "." + args.species + ".pdf",
             legend_loc=plot_cfg["legend_loc"],
         )
 

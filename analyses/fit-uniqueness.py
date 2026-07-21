@@ -102,8 +102,6 @@ def main():
     if not args.linear_x:
         ax.set_xscale("log")
         ax.set_xlim(left=max(1.0, args.xmin), right=kmax)
-        for kk in (15, 21):            # operational k choices, for reference
-            ax.axvline(kk, color="0.15", lw=0.6, ls=":", alpha=0.4)
     ax.legend(fontsize=8, loc="lower right")
     fig.tight_layout()
     fig.savefig(f"{args.out}_curves.pdf", bbox_inches="tight")
@@ -132,7 +130,8 @@ def main():
         bf = f"{b:.3f}" if b == b else "  -  "
         pf = f"{pl:.3f}" if pl == pl else "  -  "
         print(f"{name:<12}{N:>13.0f}{Q:>7.3f}{kc:>7.2f}{af:>8}{bf:>8}{pf:>9}")
-    print(f"\nwrote {args.out}_curves.pdf and {args.out}_repeat_spectrum.pdf")
+    print(f"\nSaved: {args.out}_curves.pdf")
+    print(f"Saved: {args.out}_repeat_spectrum.pdf")
     if not HAVE_SCIPY:
         print("[note] scipy missing: fitting skipped. pip install scipy --break-system-packages")
 
