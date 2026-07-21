@@ -9,9 +9,6 @@ one panel per genome. A companion figure shows seed density (thinning).
 Usage:
   python3 sweep-plot.py                     # all genomes found -> small multiples
   python3 sweep-plot.py <genome> [short]    # single genome -> its own figure
-Options:
-  --sweep-dir DIR   (default ../out/sweep)
-  --out-dir DIR     (default ../out)
 """
 import sys, json, argparse, math
 from pathlib import Path
@@ -21,15 +18,15 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import PercentFormatter
 from matplotlib.lines import Line2D
 
-# method -> (label, color)   colors consistent with sketch-plot.py
+# method -> (label, color, marker)
 METHOD_STYLE = {
-    "kmer":       ("k-mer",       "#333333"),
-    "minimizer":  ("Minimizers",  "#6BAF92"),
-    "syncmer":    ("Syncmer",     "#D8C99B"),
-    "blend":      ("Blend",       "#5A6F8E"),
-    "fracmh":     ("FracMinHash", "#4477AA"),
-    "strobemer":  ("Strobemer",   "#8E5A99"),
-    "lcp":        ("LCP",         "#4C956C"),
+    "kmer":       ("k-mer",       "#333333", "X"),
+    "minimizer":  ("Minimizers",  "#6BAF92", "s"),
+    "syncmer":    ("Syncmer",     "#D8C99B", "^"),
+    "blend":      ("Blend seeds", "#5A6F8E", "o"),
+    "fracmh":     ("FracMinHash", "#4477AA", "P"),
+    "strobemer":  ("Strobemer",   "#8E5A99", "D"),
+    "lcp":        ("LCP",         "#4C956C", "v"),
 }
 METHOD_ORDER = list(METHOD_STYLE.keys())
 # small genomes first (extend/edit freely); unknown names sort after, alphabetically
@@ -85,8 +82,8 @@ def legend_for(methods):
     """proxy handles/labels for a set of methods, in canonical order."""
     handles, labels = [], []
     for m in order_methods(methods):
-        label, color = METHOD_STYLE.get(m, (m, None))
-        handles.append(Line2D([0], [0], color=color, marker="o", lw=2, ms=4))
+        label, color, marker = METHOD_STYLE.get(m, (m, None, "o"))
+        handles.append(Line2D([0], [0], color=color, marker=marker, lw=2, ms=6))
         labels.append(label)
     return handles, labels
 
@@ -94,8 +91,8 @@ def legend_for(methods):
 def draw_panel(ax, methods_data, metric, title):
     for m in order_methods(methods_data):
         d = methods_data[m]
-        label, color = METHOD_STYLE.get(m, (m, None))
-        ax.plot(d["k"], d[metric], "o-", color=color, lw=2, ms=4, label=label)
+        label, color, marker = METHOD_STYLE.get(m, (m, None, "o"))
+        ax.plot(d["k"], d[metric], marker=marker, linestyle="-", color=color, lw=2, ms=6, label=label)
     ax.set_title(title)
     ax.grid(True, alpha=0.25)
     ax.set_xlabel("k")
@@ -142,21 +139,28 @@ def main():
         print(f"no sweep JSON in {args.sweep_dir} (run: make sweep)"); sys.exit(1)
 
     out = Path(args.out_dir)
-    if args.genome:                            # single genome
+    if args.genome:                            # single genome -> two PDFs
         if args.genome not in data:
             print(f"no sweep data for '{args.genome}' in {args.sweep_dir}"); sys.exit(1)
-        (out / "sweep").mkdir(parents=True, exist_ok=True)
-        short = next(iter(data[args.genome].values()))["short"]
-        fig, ax = plt.subplots(1, 2, figsize=(11, 4.4))
-        draw_panel(ax[0], data[args.genome], "uniq", f"Uniqueness")
-        ax[0].set_ylabel("unique-seed ratio"); ax[0].yaxis.set_major_formatter(PercentFormatter(1.0))
-        draw_panel(ax[1], data[args.genome], "dens", f"Seed density")
-        ax[1].set_ylabel("seeds / bp"); ax[1].set_yscale("log")
-        h, l = legend_for(set(data[args.genome]))
-        fig.legend(h, l, loc="lower center", ncol=len(l), fontsize=9, frameon=False)
-        fig.tight_layout(rect=[0, 0.05, 1, 1])
-        savefig(fig, str(out / f"{args.genome}_sweep"))
-        print(f"wrote {out/(args.genome+'_sweep')}.pdf")
+        out.mkdir(parents=True, exist_ok=True)
+        md = data[args.genome]
+        short = next(iter(md.values()))["short"]
+        for metric, ylabel, title, tag, percent, logy, loc in [
+            ("uniq", "unique-seed ratio", "Uniqueness vs k",  "sweep_uniqueness",   True,  False, "lower right"),
+            ("dens", "seeds / bp",        "Seed density vs k", "sweep_seed_density", False, True,  "upper right"),
+        ]:
+            fig, ax = plt.subplots(figsize=(8, 6))
+            draw_panel(ax, md, metric, f"{title} ({short})")
+            ax.set_ylabel(ylabel)
+            if percent: ax.yaxis.set_major_formatter(PercentFormatter(1.0))
+            if logy:    ax.set_yscale("log")
+            h, l = legend_for(set(md))
+            legend_kwargs = {"bbox_to_anchor": (1.0, 0.90)} if loc == "upper right" else {}
+            ax.legend(h, l, loc=loc, frameon=True, ncol=1, fontsize=12, **legend_kwargs)
+            fig.tight_layout()
+            savefig(fig, str(out / f"{tag}.{args.genome}"))
+            plt.close(fig)
+            print(f"wrote {out / (tag + '.' + args.genome)}.pdf")
     else:                                      # all genomes, small multiples
         genomes = order_genomes(list(data))
         figure(data, genomes, "uniq", "unique-seed ratio",
